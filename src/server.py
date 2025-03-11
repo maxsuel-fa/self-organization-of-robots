@@ -14,7 +14,7 @@ from mesa.visualization.utils import update_counter
 from model import RobotMission
 
 def agent_portrayal(agent):
-    # Define portrayals based on agent type.
+    # Define visual properties based on agent type.
     if hasattr(agent, 'waste_type'):
         if agent.waste_type == "green":
             return {"Shape": "circle", "Color": "green", "r": 0.3}
@@ -37,8 +37,7 @@ def agent_portrayal(agent):
 
 @solara.component
 def WasteCountHistogram(model: RobotMission):
-    # This histogram shows the most recent waste count from the DataCollector.
-    update_counter.get()  # Required for thread-safety updates.
+    update_counter.get()  # Ensures thread-safe updates.
     fig = Figure()
     ax = fig.subplots()
     df = model.datacollector.get_model_vars_dataframe()
@@ -49,7 +48,7 @@ def WasteCountHistogram(model: RobotMission):
         ax.bar(["Waste Count"], [0])
     return solara.FigureMatplotlib(fig)
 
-# Define model parameters with interactive sliders.
+# Define interactive model parameters.
 model_params = {
     "width": 30,
     "height": 30,
@@ -87,36 +86,23 @@ model_params = {
     }
 }
 
-# Create an initial model instance.
-model_instance = RobotMission(
-    width=30, 
-    height=30, 
-    num_green=5, 
-    num_yellow=3, 
-    num_red=2, 
-    num_waste=10
-)
-
 # Create a space visualization component.
 SpaceGraph = make_space_component(agent_portrayal)
 
-# Create a plot component that shows the total waste count.
+# Create a plot component for waste count.
 def get_waste_count(model):
-    waste_count = sum(1 for agent in model.schedule.agents if hasattr(agent, "waste_type"))
+    waste_count = sum(1 for agent in model.custom_agents if hasattr(agent, "waste_type"))
     return {"Waste Count": waste_count}
 
 WastePlot = make_plot_component(get_waste_count)
 
-# Build the SolaraViz dashboard.
+# Pass the model class (not an instance) so that slider parameters can instantiate it.
 page = SolaraViz(
-    model=model_instance,
+    model=RobotMission,
     components=[SpaceGraph, WastePlot, WasteCountHistogram],
     model_params=model_params,
     name="Self-Organization of Robots"
 )
 
-# In a Jupyter Notebook, simply display the `page` widget.
+# In a Jupyter Notebook, displaying 'page' will render the dashboard.
 page
-
-# To run as a standalone app, use:
-#   solara run server.py

@@ -7,7 +7,6 @@ Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
 
 from mesa import Model
-from mesa.time import RandomActivation
 from mesa.space import MultiGrid
 from mesa.datacollection import DataCollector
 from agents import GreenRobotAgent, YellowRobotAgent, RedRobotAgent
@@ -20,13 +19,15 @@ class RobotMission(Model):
         super().__init__()
         self.width = width
         self.height = height
-        self.schedule = RandomActivation(self)
         self.grid = MultiGrid(width, height, torus=False)
+        
+        # Instead of using self.agents (reserved), we use self.custom_agents
+        self.custom_agents = []
         
         # Create a DataCollector to record waste count.
         self.datacollector = DataCollector(
             model_reporters={
-                "WasteCount": lambda m: sum(1 for agent in m.schedule.agents if hasattr(agent, "waste_type"))
+                "WasteCount": lambda m: sum(1 for agent in m.custom_agents if hasattr(agent, "waste_type"))
             }
         )
         
@@ -35,14 +36,14 @@ class RobotMission(Model):
             for y in range(height):
                 radio = RadioactivityAgent(self, (x, y))
                 self.grid.place_agent(radio, (x, y))
-                self.schedule.add(radio)
+                self.custom_agents.append(radio)
         
         # Place the WasteDisposalAgent in a random cell on the easternmost column.
         eastern_x = width - 1
         disposal_y = random.randrange(height)
         self.waste_disposal = WasteDisposalAgent(self, (eastern_x, disposal_y))
         self.grid.place_agent(self.waste_disposal, (eastern_x, disposal_y))
-        self.schedule.add(self.waste_disposal)
+        self.custom_agents.append(self.waste_disposal)
         
         # Add WasteAgent (green waste initially placed in zone z1).
         for _ in range(num_waste):
@@ -50,7 +51,7 @@ class RobotMission(Model):
             y = random.randrange(height)
             waste = WasteAgent(self, 'green', (x, y))
             self.grid.place_agent(waste, (x, y))
-            self.schedule.add(waste)
+            self.custom_agents.append(waste)
         
         # Create and place robot agents.
         for _ in range(num_green):
@@ -58,21 +59,21 @@ class RobotMission(Model):
             y = random.randrange(height)
             agent = GreenRobotAgent(self)
             self.grid.place_agent(agent, (x, y))
-            self.schedule.add(agent)
+            self.custom_agents.append(agent)
         
         for _ in range(num_yellow):
             x = random.randrange(0, 2 * (width // 3))
             y = random.randrange(height)
             agent = YellowRobotAgent(self)
             self.grid.place_agent(agent, (x, y))
-            self.schedule.add(agent)
+            self.custom_agents.append(agent)
         
         for _ in range(num_red):
             x = random.randrange(width)
             y = random.randrange(height)
             agent = RedRobotAgent(self)
             self.grid.place_agent(agent, (x, y))
-            self.schedule.add(agent)
+            self.custom_agents.append(agent)
     
     def get_zone(self, pos):
         x, y = pos
@@ -85,4 +86,6 @@ class RobotMission(Model):
     
     def step(self):
         self.datacollector.collect(self)
-        self.schedule.step()
+        random.shuffle(self.custom_agents)
+        for agent in self.custom_agents:
+            agent.step()
