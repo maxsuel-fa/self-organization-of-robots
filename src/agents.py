@@ -1,7 +1,9 @@
 """
 File: agents.py
+Group: 5 
+Date of creation: 25/03/2024
 Brief: Implements the Robot agents classes
-Authors: 
+Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
 
 class Agent:
