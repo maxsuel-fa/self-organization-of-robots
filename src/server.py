@@ -6,22 +6,23 @@ Brief: Implements the server and comunication
 Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
 
-# server.py
+import mesa
+import solara
+from matplotlib.figure import Figure
 from mesa.visualization import SolaraViz, make_plot_component, make_space_component
+from mesa.visualization.utils import update_counter
 from model import RobotMission
 
-def portrayal_method(agent):
-    # Define portrayals for different agents
+def agent_portrayal(agent):
+    # Define portrayals based on agent type.
     if hasattr(agent, 'waste_type'):
-        # Waste agents portrayal
-        if agent.waste_type == 'green':
+        if agent.waste_type == "green":
             return {"Shape": "circle", "Color": "green", "r": 0.3}
-        elif agent.waste_type == 'yellow':
+        elif agent.waste_type == "yellow":
             return {"Shape": "circle", "Color": "yellow", "r": 0.3}
-        elif agent.waste_type == 'red':
+        elif agent.waste_type == "red":
             return {"Shape": "circle", "Color": "red", "r": 0.3}
-    elif getattr(agent, "knowledge", None) is not None:
-        # Robot agents portrayal
+    elif hasattr(agent, "knowledge"):
         if agent.__class__.__name__ == "GreenRobotAgent":
             return {"Shape": "circle", "Color": "lightgreen", "r": 0.5}
         elif agent.__class__.__name__ == "YellowRobotAgent":
@@ -29,38 +30,93 @@ def portrayal_method(agent):
         elif agent.__class__.__name__ == "RedRobotAgent":
             return {"Shape": "circle", "Color": "darkred", "r": 0.5}
     elif hasattr(agent, "radioactivity"):
-        # Radioactivity agents portrayal; using a grayscale based on value
         shade = int(255 * (1 - agent.radioactivity))
         return {"Shape": "circle", "Color": f"rgb({shade}, {shade}, {shade})", "r": 0.1}
-    # Waste disposal or other agents can have a default portrayal
-    return {}
+    else:
+        return {"Shape": "rect", "Color": "black", "w": 1, "h": 1}
 
-# Create a space visualization component.
-space_component = make_space_component(
-    canvas_width=600,
-    canvas_height=600,
-    grid_width=30,
-    grid_height=30,
-    portrayal_method=portrayal_method
+@solara.component
+def WasteCountHistogram(model: RobotMission):
+    # This histogram shows the most recent waste count from the DataCollector.
+    update_counter.get()  # Required for thread-safety updates.
+    fig = Figure()
+    ax = fig.subplots()
+    df = model.datacollector.get_model_vars_dataframe()
+    if not df.empty:
+        last_value = df["WasteCount"].iloc[-1]
+        ax.bar(["Waste Count"], [last_value])
+    else:
+        ax.bar(["Waste Count"], [0])
+    return solara.FigureMatplotlib(fig)
+
+# Define model parameters with interactive sliders.
+model_params = {
+    "width": 30,
+    "height": 30,
+    "num_green": {
+        "type": "SliderInt",
+        "value": 5,
+        "label": "Number of Green Robots:",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+    },
+    "num_yellow": {
+        "type": "SliderInt",
+        "value": 3,
+        "label": "Number of Yellow Robots:",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+    },
+    "num_red": {
+        "type": "SliderInt",
+        "value": 2,
+        "label": "Number of Red Robots:",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+    },
+    "num_waste": {
+        "type": "SliderInt",
+        "value": 10,
+        "label": "Number of Waste Items:",
+        "min": 0,
+        "max": 20,
+        "step": 1,
+    }
+}
+
+# Create an initial model instance.
+model_instance = RobotMission(
+    width=30, 
+    height=30, 
+    num_green=5, 
+    num_yellow=3, 
+    num_red=2, 
+    num_waste=10
 )
 
-# Create a simple plot component. For example, plotting the total number of waste agents.
+# Create a space visualization component.
+SpaceGraph = make_space_component(agent_portrayal)
+
+# Create a plot component that shows the total waste count.
 def get_waste_count(model):
     waste_count = sum(1 for agent in model.schedule.agents if hasattr(agent, "waste_type"))
     return {"Waste Count": waste_count}
 
-plot_component = make_plot_component(
-    get_waste_count,
-    canvas_width=600,
-    canvas_height=200
+WastePlot = make_plot_component(get_waste_count)
+
+# Build the SolaraViz dashboard.
+page = SolaraViz(
+    model=model_instance,
+    components=[SpaceGraph, WastePlot, WasteCountHistogram],
+    model_params=model_params,
+    name="Self-Organization of Robots"
 )
 
-viz = SolaraViz(
-    model=RobotMission,
-    model_params={"width": 30, "height": 30, "num_green": 5, "num_yellow": 3, "num_red": 2, "num_waste": 10},
-    visualization_components=[space_component, plot_component],
-    title="Robot Mission Simulation"
-)
+# In a Jupyter Notebook, simply display the `page` widget.
+page
 
-if __name__ == '__main__':
-    viz.launch()
+# To run as a standalone app, use:
+#   solara run server.py

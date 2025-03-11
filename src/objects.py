@@ -10,9 +10,10 @@ from mesa import Agent
 import random
 
 class RadioactivityAgent(Agent):
-    def __init__(self, unique_id, model, pos):
-        super().__init__(unique_id, model)
-        self.pos = pos
+    def __init__(self, model, pos):
+        super().__init__(model)
+        # Do not assign self.pos here—this is managed by the grid.
+        self.initial_pos = pos  # Optionally, store the initial position.
         self.zone = self.model.get_zone(pos)
         self.radioactivity = self.generate_radioactivity()
 
@@ -25,24 +26,21 @@ class RadioactivityAgent(Agent):
             return random.uniform(0.66, 1)
 
     def step(self):
-        # Radioactivity is static; no behavior required.
         pass
 
 class WasteAgent(Agent):
-    def __init__(self, unique_id, model, waste_type, pos):
-        super().__init__(unique_id, model)
+    def __init__(self, model, waste_type, pos):
+        super().__init__(model)
         self.waste_type = waste_type  # 'green', 'yellow', or 'red'
-        self.pos = pos
+        self.initial_pos = pos  # Optionally, store the initial position.
 
     def step(self):
-        # Waste does not move by itself.
         pass
 
 class WasteDisposalAgent(Agent):
-    def __init__(self, unique_id, model, pos):
-        super().__init__(unique_id, model)
-        self.pos = pos
+    def __init__(self, model, pos):
+        super().__init__(model)
+        self.initial_pos = pos  # Optionally, store the initial position.
 
     def step(self):
-        # Waste disposal is static.
         pass
