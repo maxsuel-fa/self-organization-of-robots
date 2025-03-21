@@ -6,47 +6,60 @@ Brief: Implements the server and communication
 Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
 
+from matplotlib import pyplot as plt
 import mesa
 import solara
 from matplotlib.figure import Figure
 from mesa.visualization import SolaraViz, make_plot_component, make_space_component
 from mesa.visualization.utils import update_counter
 from model import RobotMission
+from agents import RedRobotAgent, GreenRobotAgent, YellowRobotAgent
+from objects import RadioactivityAgent, WasteAgent, WasteDisposalAgent
 
 def agent_portrayal(agent):
-    # Define visual properties based on agent type.
-    if hasattr(agent, 'waste_type'):
-        if agent.waste_type == "green":
-            return {"Shape": "circle", "Color": "green", "r": 0.3}
-        elif agent.waste_type == "yellow":
-            return {"Shape": "circle", "Color": "yellow", "r": 0.3}
-        elif agent.waste_type == "red":
-            return {"Shape": "circle", "Color": "red", "r": 0.3}
-    elif hasattr(agent, "knowledge"):
-        if agent.__class__.__name__ == "GreenRobotAgent":
-            return {"Shape": "circle", "Color": "lightgreen", "r": 0.5}
-        elif agent.__class__.__name__ == "YellowRobotAgent":
-            return {"Shape": "circle", "Color": "orange", "r": 0.5}
-        elif agent.__class__.__name__ == "RedRobotAgent":
-            return {"Shape": "circle", "Color": "darkred", "r": 0.5}
-    elif hasattr(agent, "radioactivity"):
-        shade = int(255 * (1 - agent.radioactivity))
-        return {"Shape": "circle", "Color": f"rgb({shade}, {shade}, {shade})", "r": 0.1}
-    else:
-        return {"Shape": "rect", "Color": "black", "w": 1, "h": 1}
+    agent_type = agent.__class__.__name__
 
-@solara.component
-def WasteCountHistogram(model: RobotMission):
-    update_counter.get()  # Ensures thread-safe updates.
-    fig = Figure()
-    ax = fig.subplots()
-    df = model.datacollector.get_model_vars_dataframe()
-    if not df.empty:
-        last_value = df["WasteCount"].iloc[-1]
-        ax.bar(["Waste Count"], [last_value])
+    if agent_type == "RadioactivityAgent":
+        # Use the model's zone method to determine the background color.
+        zone = agent.model.get_zone(agent.pos)
+        zone_color_map = {
+            "z1": "#d0f0fd",  # light blue
+            "z2": "#d0fbd0",  # light green
+            "z3": "#fdd0d0"   # light red/pink
+        }
+        color = zone_color_map.get(zone, "white")
+        # Return a rectangle that fills the cell as the background.
+        return {"shape": "rect", "color": color, "w": 1, "h": 1, "layer": 0}
+
+    elif agent_type == "WasteDisposalAgent":
+        # Display as a blue square on top of the background.
+        return {"shape": "rect", "color": "blue", "w": 1, "h": 1, "layer": 2}
+
+    elif agent_type == "WasteAgent":
+        color_map = {"green": "green", "yellow": "yellow", "red": "red"}
+        color = color_map.get(getattr(agent, "waste_type", "green"), "green")
+        return {"shape": "circle", "color": color, "r": 0.3, "layer": 3}
+
+    elif agent_type in ["GreenRobotAgent", "YellowRobotAgent", "RedRobotAgent"]:
+        color_map = {
+            "GreenRobotAgent": "lightgreen",
+            "YellowRobotAgent": "orange",
+            "RedRobotAgent": "darkred"
+        }
+        color = color_map.get(agent_type, "gray")
+        return {"shape": "circle", "color": color, "r": 0.5, "layer": 4}
+
     else:
-        ax.bar(["Waste Count"], [0])
-    return solara.FigureMatplotlib(fig)
+        # Fallback portrayal for any agent that is not explicitly handled.
+        return {"shape": "rect", "color": "black", "w": 1, "h": 1, "layer": 0}
+# Create a space visualization component using the updated agent_portrayal.
+SpaceGraph = make_space_component(agent_portrayal)
+
+def get_waste_count(model):
+    waste_count = sum(1 for agent in model.custom_agents if hasattr(agent, "waste_type"))
+    return {"Waste Count": waste_count}
+
+WastePlot = make_plot_component(get_waste_count)
 
 # Define interactive model parameters.
 model_params = {
@@ -86,19 +99,20 @@ model_params = {
     }
 }
 
-# Create a space visualization component.
-SpaceGraph = make_space_component(
-    agent_portrayal,
-)
+@solara.component
+def WasteCountHistogram(model: RobotMission):
+    update_counter.get()  # Ensures thread-safe updates.
+    fig = Figure()
+    ax = fig.subplots()
+    df = model.datacollector.get_model_vars_dataframe()
+    if not df.empty:
+        last_value = df["WasteCount"].iloc[-1]
+        ax.bar(["Waste Count"], [last_value])
+    else:
+        ax.bar(["Waste Count"], [0])
+    return solara.FigureMatplotlib(fig)
 
-# Create a plot component for waste count.
-def get_waste_count(model):
-    waste_count = sum(1 for agent in model.custom_agents if hasattr(agent, "waste_type"))
-    return {"Waste Count": waste_count}
-
-WastePlot = make_plot_component(get_waste_count)
-
-# Create an instance of the model using defaults from model_params.
+# Create an instance of the model using the defined parameters.
 model_instance = RobotMission(
     width=model_params["width"],
     height=model_params["height"],
@@ -108,6 +122,7 @@ model_instance = RobotMission(
     num_waste=model_params["num_waste"]["value"]
 )
 
+# Combine the components into the SolaraViz page.
 page = SolaraViz(
     model=model_instance,
     components=[SpaceGraph, WastePlot, WasteCountHistogram],
