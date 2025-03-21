@@ -186,9 +186,12 @@ class YellowRobotAgent(BaseRobot):
                 new_pos = (self.pos[0] - 1, self.pos[1])
                 if not self.model.grid.out_of_bounds(new_pos):
                     self.model.grid.move_agent(self, new_pos)
-                    print(f"    [Yellow] No yellow waste; repositioning west to {new_pos} (aiming for zone z1)")
+                    print(f"    [Yellow] No yellow waste; repositioning west to {new_pos}")
             else:
-                print(f"    [Yellow] In zone z1 and no yellow waste found, waiting.")
+                new_pos = (self.pos[0] + 1, self.pos[1])
+                if not self.model.grid.out_of_bounds(new_pos):
+                    self.model.grid.move_agent(self, new_pos)
+                    print(f"    [Yellow] No yellow waste; repositioning east to {new_pos}")
 
 class RedRobotAgent(BaseRobot):
     def allowed_zones(self):
@@ -221,10 +224,13 @@ class RedRobotAgent(BaseRobot):
                 self.model.grid.move_agent(self, new_pos)
             print(f"    [Red] Moving towards red waste at {target}, new position {new_pos}")
         else:
-            if self.compute_zone() != 'z2':
+            if self.compute_zone() == 'z3':
                 new_pos = (self.pos[0] - 1, self.pos[1])
                 if not self.model.grid.out_of_bounds(new_pos):
                     self.model.grid.move_agent(self, new_pos)
                     print(f"    [Red] No red waste; repositioning west to {new_pos}")
             else:
-                print(f"    [Red] In zone 2 and no red waste found, waiting.")
+                new_pos = (self.pos[0] + 1, self.pos[1])
+                if not self.model.grid.out_of_bounds(new_pos):
+                    self.model.grid.move_agent(self, new_pos)
+                    print(f"    [Red] No red waste; repositioning east to {new_pos}")
