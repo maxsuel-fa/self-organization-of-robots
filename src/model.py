@@ -21,7 +21,7 @@ class RobotMission(Model):
         self.height = height
         self.grid = MultiGrid(width, height, torus=False)
         
-        # Instead of using self.agents (reserved), we use self.custom_agents
+        # We use self.custom_agents
         self.custom_agents = []
         
         # Create a DataCollector to record waste count.
@@ -74,7 +74,10 @@ class RobotMission(Model):
             agent = RedRobotAgent(self)
             self.grid.place_agent(agent, (x, y))
             self.custom_agents.append(agent)
-    
+
+        print(f"[INIT] RobotMission initialized with grid {width}x{height} and {len(self.custom_agents)} agents.")
+        self.step_count = 0
+
     def get_zone(self, pos):
         x, y = pos
         if x < self.width / 3:
@@ -85,7 +88,21 @@ class RobotMission(Model):
             return 'z3'
     
     def step(self):
+
+        self.step_count += 1
+        print(f"\n=== Step {self.step_count} start ===")
         self.datacollector.collect(self)
+        waste_count = sum(1 for agent in self.custom_agents if hasattr(agent, "waste_type"))
+        print(f"[MODEL] Waste Count: {waste_count}")
         random.shuffle(self.custom_agents)
         for agent in self.custom_agents:
+            if not isinstance(agent, (WasteAgent, RadioactivityAgent, WasteDisposalAgent)):
+                print(f"[MODEL] Stepping agent {agent} at position {agent.pos}")
             agent.step()
+        print(f"=== Step {self.step_count} complete ===")
+
+
+        # self.datacollector.collect(self)
+        # random.shuffle(self.custom_agents)
+        # for agent in self.custom_agents:
+        #     agent.step()

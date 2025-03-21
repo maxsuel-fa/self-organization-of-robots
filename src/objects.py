@@ -13,7 +13,7 @@ class RadioactivityAgent(Agent):
     def __init__(self, model, pos):
         super().__init__(model)
         # Do not assign self.pos here—this is managed by the grid.
-        self.initial_pos = pos  # Optionally, store the initial position.
+        self.initial_pos = pos  # Store the initial position.
         self.zone = self.model.get_zone(pos)
         self.radioactivity = self.generate_radioactivity()
 
@@ -32,7 +32,7 @@ class WasteAgent(Agent):
     def __init__(self, model, waste_type, pos):
         super().__init__(model)
         self.waste_type = waste_type  # 'green', 'yellow', or 'red'
-        self.initial_pos = pos  # Optionally, store the initial position.
+        self.initial_pos = pos  # Store the initial position.
 
     def step(self):
         pass
@@ -40,7 +40,7 @@ class WasteAgent(Agent):
 class WasteDisposalAgent(Agent):
     def __init__(self, model, pos):
         super().__init__(model)
-        self.initial_pos = pos  # Optionally, store the initial position.
+        self.initial_pos = pos  # Store the initial position.
 
     def step(self):
         pass

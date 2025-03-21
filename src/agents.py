@@ -82,33 +82,45 @@ class GreenRobotAgent(BaseRobot):
         return ['z1']
 
     def step(self):
+        print(f"[Robot Step] GreenRobotAgent at {self.pos} is stepping.")
         allowed_waste = ['green']
         target = self.get_closest_waste(allowed_waste)
         if target is not None:
             new_pos = self.move_towards(target)
+            print(f"    GreenRobotAgent at {self.pos} found target {target} and moving to {new_pos}.")
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
+        else:
+            print(f"    GreenRobotAgent at {self.pos} found no target.")
 
 class YellowRobotAgent(BaseRobot):
     def allowed_zones(self):
         return ['z1', 'z2']
 
     def step(self):
+        #print(f"[Robot Step] YellowRobotAgent at {self.pos} is stepping.")
         allowed_waste = ['yellow']
         target = self.get_closest_waste(allowed_waste)
         if target is not None:
             new_pos = self.move_towards(target)
+            #print(f"    YellowRobotAgent at {self.pos} found target {target} and moving to {new_pos}.")
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
+        #else:
+        #    print(f"    YellowRobotAgent at {self.pos} found no target.")
 
 class RedRobotAgent(BaseRobot):
     def allowed_zones(self):
         return ['z1', 'z2', 'z3']
 
     def step(self):
+        #print(f"[Robot Step] RedRobotAgent at {self.pos} is stepping.")
         allowed_waste = ['red']
         target = self.get_closest_waste(allowed_waste)
         if target is not None:
             new_pos = self.move_towards(target)
+            #print(f"    RedRobotAgent at {self.pos} found target {target} and moving to {new_pos}.")
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
+        #else:
+        #    print(f"    RedRobotAgent at {self.pos} found no target.")
