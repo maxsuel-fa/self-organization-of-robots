@@ -2,7 +2,7 @@
 File: server.py
 Group: 5 
 Date of creation: 25/03/2024
-Brief: Implements the server and comunication
+Brief: Implements the server and communication
 Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
 
@@ -87,7 +87,9 @@ model_params = {
 }
 
 # Create a space visualization component.
-SpaceGraph = make_space_component(agent_portrayal)
+SpaceGraph = make_space_component(
+    agent_portrayal,
+)
 
 # Create a plot component for waste count.
 def get_waste_count(model):
@@ -96,13 +98,19 @@ def get_waste_count(model):
 
 WastePlot = make_plot_component(get_waste_count)
 
-# Pass the model class (not an instance) so that slider parameters can instantiate it.
+# Create an instance of the model using defaults from model_params.
+model_instance = RobotMission(
+    width=model_params["width"],
+    height=model_params["height"],
+    num_green=model_params["num_green"]["value"],
+    num_yellow=model_params["num_yellow"]["value"],
+    num_red=model_params["num_red"]["value"],
+    num_waste=model_params["num_waste"]["value"]
+)
+
 page = SolaraViz(
-    model=RobotMission,
+    model=model_instance,
     components=[SpaceGraph, WastePlot, WasteCountHistogram],
     model_params=model_params,
     name="Self-Organization of Robots"
 )
-
-# In a Jupyter Notebook, displaying 'page' will render the dashboard.
-page
