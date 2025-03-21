@@ -5,7 +5,6 @@ Date of creation: 25/03/2024
 Brief: Implements the Robot agents classes
 Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
-### A MUDAR ( ZONAS N PRECISAM SER 1/3 1/3 1/3)
 
 from mesa import Agent
 
@@ -44,7 +43,7 @@ class BaseRobot(Agent):
     def get_closest_waste(self, allowed_types):
         best_target = None
         best_distance = float('inf')
-        # Note: In Mesa 3.0.3, coord_iter() returns (cell_contents, (x, y))
+        # Search grid cells for a waste agent whose waste_type is in allowed_types.
         for cell in self.model.grid.coord_iter():
             cell_content, (x, y) = cell  
             for obj in cell_content:
@@ -68,12 +67,28 @@ class BaseRobot(Agent):
             return self.pos
         return new_position
 
+    def pick_up_if_present(self, target_type):
+        """
+        Checks the current cell for a waste of the given target_type.
+        If found, the waste is picked up (added to self.carrying) and removed from the grid.
+        """
+        cell_contents = self.model.grid.get_cell_list_contents([self.pos])
+        for obj in cell_contents:
+            if hasattr(obj, "waste_type") and obj.waste_type == target_type:
+                print(f"    {self.__class__.__name__} at {self.pos} picking up {target_type} waste.")
+                self.carrying.append(target_type)
+                self.model.grid.remove_agent(obj)
+                if obj in self.model.custom_agents:
+                    self.model.custom_agents.remove(obj)
+                return True
+        return False
+
     def step(self):
-        allowed_waste = []  # By default, no specific waste is targeted.
+        # Default behavior: move toward any allowed waste.
+        allowed_waste = []
         target = self.get_closest_waste(allowed_waste)
         if target is not None:
             new_pos = self.move_towards(target)
-            # Only move if the new position is different.
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
 
@@ -82,45 +97,134 @@ class GreenRobotAgent(BaseRobot):
         return ['z1']
 
     def step(self):
-        print(f"[Robot Step] GreenRobotAgent at {self.pos} is stepping.")
-        allowed_waste = ['green']
-        target = self.get_closest_waste(allowed_waste)
-        if target is not None:
+        print(f"[Green] at {self.pos} carrying: {self.carrying}")
+        # If carrying a yellow waste, transport it east within z1.
+        if "yellow" in self.carrying:
+            current_x, current_y = self.pos
+            if current_x < (self.model.width // 3) - 1:
+                new_pos = (current_x + 1, current_y)
+                self.model.grid.move_agent(self, new_pos)
+                print(f"    [Green] Transporting yellow waste east to {new_pos}")
+            else:
+                # At eastern boundary of z1: drop the yellow waste.
+                print(f"    [Green] At eastern boundary of z1, dropping yellow waste at {self.pos}.")
+                self.carrying.remove("yellow")
+                from objects import WasteAgent
+                new_waste = WasteAgent(self.model, 'yellow', self.pos)
+                self.model.grid.place_agent(new_waste, self.pos)
+                self.model.custom_agents.append(new_waste)
+            return
+
+        # Otherwise, try to pick up green waste.
+        green_count = self.carrying.count("green")
+        if green_count < 2:
+            if self.pick_up_if_present("green"):
+                green_count += 1
+
+        if green_count == 2:
+            print(f"    [Green] Transforming 2 green wastes into 1 yellow waste at {self.pos}")
+            for _ in range(2):
+                self.carrying.remove("green")
+            self.carrying.append("yellow")
+            return
+
+        # If not carrying enough green waste, move toward a green waste.
+        target = self.get_closest_waste(["green"])
+        if target:
             new_pos = self.move_towards(target)
-            print(f"    GreenRobotAgent at {self.pos} found target {target} and moving to {new_pos}.")
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
+            print(f"    [Green] Moving towards green waste at {target}, new position {new_pos}")
         else:
-            print(f"    GreenRobotAgent at {self.pos} found no target.")
+            print(f"    [Green] No green waste found.")
 
 class YellowRobotAgent(BaseRobot):
     def allowed_zones(self):
         return ['z1', 'z2']
 
     def step(self):
-        #print(f"[Robot Step] YellowRobotAgent at {self.pos} is stepping.")
-        allowed_waste = ['yellow']
-        target = self.get_closest_waste(allowed_waste)
-        if target is not None:
+        print(f"[Yellow] at {self.pos} carrying: {self.carrying}")
+        # If carrying a red waste, transport it east within zones z1 and z2.
+        if "red" in self.carrying:
+            current_x, current_y = self.pos
+            if current_x < (2 * self.model.width // 3) - 1:
+                new_pos = (current_x + 1, current_y)
+                self.model.grid.move_agent(self, new_pos)
+                print(f"    [Yellow] Transporting red waste east to {new_pos}")
+            else:
+                print(f"    [Yellow] At eastern boundary of allowed zones, dropping red waste at {self.pos}.")
+                self.carrying.remove("red")
+                from objects import WasteAgent
+                new_waste = WasteAgent(self.model, 'red', self.pos)
+                self.model.grid.place_agent(new_waste, self.pos)
+                self.model.custom_agents.append(new_waste)
+            return
+
+        # Otherwise, try to pick up yellow waste.
+        yellow_count = self.carrying.count("yellow")
+        if yellow_count < 2:
+            if self.pick_up_if_present("yellow"):
+                yellow_count += 1
+
+        if yellow_count == 2:
+            print(f"    [Yellow] Transforming 2 yellow wastes into 1 red waste at {self.pos}")
+            for _ in range(2):
+                self.carrying.remove("yellow")
+            self.carrying.append("red")
+            return
+
+        # If not carrying enough yellow waste, move toward a yellow waste.
+        target = self.get_closest_waste(["yellow"])
+        if target:
             new_pos = self.move_towards(target)
-            #print(f"    YellowRobotAgent at {self.pos} found target {target} and moving to {new_pos}.")
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
-        #else:
-        #    print(f"    YellowRobotAgent at {self.pos} found no target.")
+            print(f"    [Yellow] Moving towards yellow waste at {target}, new position {new_pos}")
+        else:
+            # Reposition: if no yellow waste found, move west until reaching zone z1.
+            if self.compute_zone() != 'z1':
+                new_pos = (self.pos[0] - 1, self.pos[1])
+                if not self.model.grid.out_of_bounds(new_pos):
+                    self.model.grid.move_agent(self, new_pos)
+                    print(f"    [Yellow] No yellow waste; repositioning west to {new_pos} (aiming for zone z1)")
+            else:
+                print(f"    [Yellow] In zone z1 and no yellow waste found, waiting.")
 
 class RedRobotAgent(BaseRobot):
     def allowed_zones(self):
         return ['z1', 'z2', 'z3']
 
     def step(self):
-        #print(f"[Robot Step] RedRobotAgent at {self.pos} is stepping.")
-        allowed_waste = ['red']
-        target = self.get_closest_waste(allowed_waste)
-        if target is not None:
+        print(f"[Red] at {self.pos} carrying: {self.carrying}")
+        # If carrying a red waste, transport it east toward disposal.
+        if "red" in self.carrying:
+            if self.pos == self.model.waste_disposal.pos:
+                print(f"    [Red] At disposal cell {self.pos}, dropping red waste.")
+                self.carrying.remove("red")
+            else:
+                new_pos = self.move_towards(self.model.waste_disposal.pos)
+                if new_pos != self.pos:
+                    self.model.grid.move_agent(self, new_pos)
+                    print(f"    [Red] Moving toward disposal cell at {self.model.waste_disposal.pos}, new position {new_pos}")
+            return
+
+        # Otherwise, try to pick up red waste.
+        if self.pick_up_if_present("red"):
+            print(f"    [Red] Picked up red waste at {self.pos}")
+            return
+
+        # If no red waste is found, reposition: move west until reaching zone z2.
+        target = self.get_closest_waste(["red"])
+        if target:
             new_pos = self.move_towards(target)
-            #print(f"    RedRobotAgent at {self.pos} found target {target} and moving to {new_pos}.")
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
-        #else:
-        #    print(f"    RedRobotAgent at {self.pos} found no target.")
+            print(f"    [Red] Moving towards red waste at {target}, new position {new_pos}")
+        else:
+            if self.compute_zone() != 'z2':
+                new_pos = (self.pos[0] - 1, self.pos[1])
+                if not self.model.grid.out_of_bounds(new_pos):
+                    self.model.grid.move_agent(self, new_pos)
+                    print(f"    [Red] No red waste; repositioning west to {new_pos}")
+            else:
+                print(f"    [Red] In zone 2 and no red waste found, waiting.")
