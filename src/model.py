@@ -12,6 +12,7 @@ from mesa.datacollection import DataCollector
 from agents import GreenRobotAgent, YellowRobotAgent, RedRobotAgent
 from objects import RadioactivityAgent, WasteAgent, WasteDisposalAgent
 import random
+import threading
 
 class RobotMission(Model):
     # All parameters now have default values.
@@ -21,7 +22,7 @@ class RobotMission(Model):
         self.height = height
         self.grid = MultiGrid(width, height, torus=False)
         
-        # We use self.custom_agents
+        # We use self.custom_agents for all agents (since "agents" is reserved).
         self.custom_agents = []
         
         # Create a DataCollector to record waste count.
@@ -30,6 +31,14 @@ class RobotMission(Model):
                 "WasteCount": lambda m: sum(1 for agent in m.custom_agents if hasattr(agent, "waste_type"))
             }
         )
+        
+        # Initialize unassigned waste sets and locks.
+        self.unassigned_green_wastes = set()
+        self.unassigned_yellow_wastes = set()
+        self.unassigned_red_wastes = set()
+        self.green_lock = threading.Lock()
+        self.yellow_lock = threading.Lock()
+        self.red_lock = threading.Lock()
         
         # Place a RadioactivityAgent on each cell.
         for x in range(width):
@@ -45,13 +54,16 @@ class RobotMission(Model):
         self.grid.place_agent(self.waste_disposal, (eastern_x, disposal_y))
         self.custom_agents.append(self.waste_disposal)
         
-        # Add WasteAgent (green waste initially placed in zone z1).
+        # Add WasteAgent (green waste initially placed in zone z1)
+        # and add them to the unassigned_green_wastes set.
         for _ in range(num_waste):
             x = random.randrange(0, width // 3)
             y = random.randrange(height)
             waste = WasteAgent(self, 'green', (x, y))
             self.grid.place_agent(waste, (x, y))
             self.custom_agents.append(waste)
+            with self.green_lock:
+                self.unassigned_green_wastes.add(waste)
         
         # Create and place robot agents.
         for _ in range(num_green):
@@ -88,21 +100,17 @@ class RobotMission(Model):
             return 'z3'
     
     def step(self):
-
         self.step_count += 1
         print(f"\n=== Step {self.step_count} start ===")
         self.datacollector.collect(self)
         waste_count = sum(1 for agent in self.custom_agents if hasattr(agent, "waste_type"))
         print(f"[MODEL] Waste Count: {waste_count}")
-        random.shuffle(self.custom_agents)
+        # Optionally, you can shuffle agents to randomize stepping order:
+        # random.shuffle(self.custom_agents)
         for agent in self.custom_agents:
+            # Print debug only for dynamic (robot) agents.
+            from objects import WasteAgent, RadioactivityAgent, WasteDisposalAgent
             if not isinstance(agent, (WasteAgent, RadioactivityAgent, WasteDisposalAgent)):
                 print(f"[MODEL] Stepping agent {agent} at position {agent.pos}")
             agent.step()
         print(f"=== Step {self.step_count} complete ===")
-
-
-        # self.datacollector.collect(self)
-        # random.shuffle(self.custom_agents)
-        # for agent in self.custom_agents:
-        #     agent.step()

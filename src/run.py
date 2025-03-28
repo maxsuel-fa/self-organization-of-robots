@@ -17,5 +17,5 @@ if __name__ == '__main__':
     num_waste = 10
 
     model = RobotMission(width, height, num_green, num_yellow, num_red, num_waste)
-    for i in range(100):
+    for i in range(20):
         model.step()
