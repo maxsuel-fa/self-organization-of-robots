@@ -110,6 +110,8 @@ class GreenRobotAgent(BaseRobot):
         return ['z1']
 
     def assign_wastes(self):
+        if self.assigned_wastes:
+            return
         # Green robots require 2 green wastes.
         required = 2
         with self.model.green_lock:
@@ -171,6 +173,8 @@ class YellowRobotAgent(BaseRobot):
         return ['z1', 'z2']
 
     def assign_wastes(self):
+        if self.assigned_wastes:
+            return
         # Yellow robots require 2 yellow wastes.
         required = 2
         with self.model.yellow_lock:
@@ -246,6 +250,8 @@ class RedRobotAgent(BaseRobot):
         return ['z1', 'z2', 'z3']
 
     def assign_wastes(self):
+        if self.assigned_wastes:
+            return
         # Red robots require 1 red waste.
         required = 1
         with self.model.red_lock:
