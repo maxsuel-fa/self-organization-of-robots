@@ -9,11 +9,31 @@ Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 from mesa import Agent
 
 class BaseRobot(Agent):
-    def __init__(self, model):
+    def __init__(self, model, heuristic="min_total_distance"):
         super().__init__(model)
         self.knowledge = {}    # For storing percepts and memory
         self.carrying = []     # For wastes that have been picked up
         self.assigned_wastes = set()  # Waste objects this robot is assigned to collect
+        self.heuristic = heuristic
+
+    def sort_by_closest(self, available):
+        return sorted(available, key=lambda waste: max(abs(waste.pos[0] - self.pos[0]), abs(waste.pos[1] - self.pos[1])))
+
+    def sort_randomly(self, available):
+        import random
+        random.shuffle(available)
+        return available
+
+    def sort_by_min_total_distance(self, available, target_point):
+        """
+        Sort available wastes by the sum of the distance from the robot to the waste 
+        plus the distance from the waste to the target_point.
+
+        Target point is eastern boundary of zone for green and yellow robots and the waste disposal
+        for red robots.
+        """
+        return sorted(available, key=lambda waste: max(abs(waste.pos[0] - self.pos[0]), abs(waste.pos[1] - self.pos[1])) +
+                      max(abs(waste.pos[0] - target_point[0]), abs(waste.pos[1] - target_point[1])))
 
     def compute_zone(self):
         x, y = self.pos
@@ -118,9 +138,15 @@ class GreenRobotAgent(BaseRobot):
             if len(self.model.unassigned_green_wastes) < required:
                 print(f"    [Green] Not enough unassigned green wastes available.")
                 return
-            # Sort available wastes by distance from the robot.
             available = list(self.model.unassigned_green_wastes)
-            available.sort(key=lambda waste: max(abs(waste.pos[0] - self.pos[0]), abs(waste.pos[1] - self.pos[1])))
+            if self.heuristic == "closest":
+                available = self.sort_by_closest(available)
+            elif self.heuristic == "random":
+                available = self.sort_randomly(available)
+            elif self.heuristic == "min_total_distance":
+                # Target is eastern boundary of zone z1: x = (self.model.width//3)-1, same y.
+                target_point = ((self.model.width // 3) - 1, self.pos[1])
+                available = self.sort_by_min_total_distance(available, target_point)
             for waste in available[:required]:
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_green_wastes.remove(waste)
@@ -182,7 +208,14 @@ class YellowRobotAgent(BaseRobot):
                 print(f"    [Yellow] Not enough unassigned yellow wastes available.")
                 return
             available = list(self.model.unassigned_yellow_wastes)
-            available.sort(key=lambda waste: max(abs(waste.pos[0]-self.pos[0]), abs(waste.pos[1]-self.pos[1])))
+            if self.heuristic == "closest":
+                available = self.sort_by_closest(available)
+            elif self.heuristic == "random":
+                available = self.sort_randomly(available)
+            elif self.heuristic == "min_total_distance":
+                # Target is eastern boundary of zone z2: x = (2*self.model.width//3)-1, same y.
+                target_point = ((self.model.width // 3) - 1, self.pos[1])
+                available = self.sort_by_min_total_distance(available, target_point)
             for waste in available[:required]:
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_yellow_wastes.remove(waste)
@@ -259,7 +292,14 @@ class RedRobotAgent(BaseRobot):
                 print(f"    [Red] Not enough unassigned red wastes available.")
                 return
             available = list(self.model.unassigned_red_wastes)
-            available.sort(key=lambda waste: max(abs(waste.pos[0]-self.pos[0]), abs(waste.pos[1]-self.pos[1])))
+            if self.heuristic == "closest":
+                available = self.sort_by_closest(available)
+            elif self.heuristic == "random":
+                available = self.sort_randomly(available)
+            elif self.heuristic == "min_total_distance":
+                # Target is the disposal cell.
+                target_point = self.model.waste_disposal.pos
+                available = self.sort_by_min_total_distance(available, target_point)
             self.assigned_wastes.add(available[0])
             self.model.unassigned_red_wastes.remove(available[0])
         print(f"    [Red] Assigned red waste: {self.assigned_wastes}")
