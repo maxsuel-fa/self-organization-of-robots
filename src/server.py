@@ -17,7 +17,7 @@ import numpy as np
 # Import the model and agent classes
 from model import RobotMission
 from agents import GreenRobotAgent, YellowRobotAgent, RedRobotAgent
-from objects import WasteAgent, WasteDisposalAgent, RadioactivityAgent
+from objects import WasteAgent, WasteDisposalAgent, RadioactivityAgent, wallAgent
 
 # === Icon image file paths ===
 GREEN_ROBOT_ICON   = "image/botzgreen1.png"    # Green robot icon image
@@ -30,7 +30,7 @@ DISPOSAL_ICON      = "image/bomb4.png"         # Waste disposal unit icon image
 
 # Define subtle zone colors for background:
 # Zone 1: lightgreen, Zone 2: lightyellow, Zone 3: mistyrose (fading pink)
-ZONE_COLORS = {"z1": "lightgreen", "z2": "lightyellow", "z3": "mistyrose"}
+ZONE_COLORS = {"z1": "lightgreen", "z2": "lightyellow", "z3": "mistyrose", "wall" : "gray"}
 
 # Define a scaling factor for cell size.
 CELL_SIZE = 20  # Increase this value for larger cells.
@@ -53,7 +53,7 @@ def get_image(image_path):
         print("Error loading image:", image_path, e)
         return None
 
-def create_background_image(width, height):
+def create_background_image(width, height, wall_positions):
     """
     Creates a NumPy array of shape (height, width, 3) representing the static background.
     Each column gets its color based on its zone.
@@ -68,6 +68,10 @@ def create_background_image(width, height):
             zone = "z3"
         rgb = mcolors.to_rgb(ZONE_COLORS[zone])
         img[:, x, :] = rgb
+
+    """ for x, y in wall_positions:
+        if 0 <= x < width and 0 <= y < height:
+            img[y, x] = (0, 0, 0) """
     return img
 
 def agent_portrayal(agent):
@@ -92,7 +96,9 @@ def agent_portrayal(agent):
             return {"shape": RED_WASTE_ICON, "size": 40, "zorder": 2}
     if isinstance(agent, WasteDisposalAgent):
         return {"shape": DISPOSAL_ICON, "size": 50, "zorder": 3}
-    return {"marker": "o", "color": "gray", "size": 20, "zorder": 1}
+    """ if isinstance(agent, wallAgent):
+        return """
+    return {"marker": "o", "color": "gray", "size": 100, "zorder": 1}
 
 def draw_agent(ax, portrayal, pos):
     """
@@ -137,13 +143,18 @@ def CustomGrid(model):
     ax = fig.subplots()
 
     global background_image
+    wall_positions = {
+        agent.initial_pos for agent in model.custom_agents
+        if isinstance(agent, wallAgent)
+    }
     # Create or update the background image if grid dimensions change.
     if background_image is None or background_image.shape[1] != model.width or background_image.shape[0] != model.height:
-        background_image = create_background_image(model.width, model.height)
+        background_image = create_background_image(model.width, model.height, wall_positions)
     
     # Draw the static background scaled by CELL_SIZE.
     ax.imshow(background_image, extent=[0, model.width * CELL_SIZE, 0, model.height * CELL_SIZE],
               zorder=0, interpolation='nearest')
+    ax.grid(True, which='major', color='gray', linewidth=0.5)
     
     # Draw dynamic agents (skip RadioactivityAgents as they are part of the background).
     for x in range(model.width):
@@ -181,6 +192,8 @@ model_params = {
 
 # Instantiate the model with initial parameters
 initial_model = RobotMission(width=30, height=30, num_green=5, num_yellow=3, num_red=2, num_waste=10)
+
+
 
 # Create the SolaraViz page with the custom grid component and interactive controls
 page = SolaraViz(

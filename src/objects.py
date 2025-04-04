@@ -44,3 +44,13 @@ class WasteDisposalAgent(Agent):
 
     def step(self):
         pass
+
+#create a wall that robots cannot go
+class wallAgent(Agent):
+    def __init__(self, model, pos):
+        super().__init__(model)
+        self.initial_pos = pos
+    
+    def step(self):
+        pass
+

@@ -10,7 +10,7 @@ from mesa import Model
 from mesa.space import MultiGrid
 from mesa.datacollection import DataCollector
 from agents import GreenRobotAgent, YellowRobotAgent, RedRobotAgent
-from objects import RadioactivityAgent, WasteAgent, WasteDisposalAgent
+from objects import RadioactivityAgent, WasteAgent, WasteDisposalAgent, wallAgent
 import random
 import threading
 
@@ -51,8 +51,27 @@ class RobotMission(Model):
         eastern_x = width - 1
         disposal_y = random.randrange(height)
         self.waste_disposal = WasteDisposalAgent(self, (eastern_x, disposal_y))
-        self.grid.place_agent(self.waste_disposal, (eastern_x, disposal_y))
-        self.custom_agents.append(self.waste_disposal)
+
+        # Define gate positions (y-values where there’s an opening)
+        gate_y_positions = [5, 4, 3, 15, 14, 13, 25, 24, 23]  # Can be customized
+
+        # Add vertical wall between z1 and z2 (x = width // 3)
+        wall_x1 = self.width // 3
+        for y in range(self.height):
+            if y not in gate_y_positions:
+                wall = wallAgent(self, (wall_x1, y))
+                self.grid.place_agent(wall, (wall_x1, y))
+                self.custom_agents.append(wall)
+
+        # Add vertical wall between z2 and z3 (x = 2 * width // 3)
+        wall_x2 = 2 * self.width // 3
+        for y in range(self.height):
+            if y not in gate_y_positions:
+                wall = wallAgent(self, (wall_x2, y))
+                self.grid.place_agent(wall, (wall_x2, y))
+                self.custom_agents.append(wall)
+                self.grid.place_agent(self.waste_disposal, (eastern_x, disposal_y))
+                self.custom_agents.append(self.waste_disposal)
         
         # Add WasteAgent (green waste initially placed in zone z1)
         # and add them to the unassigned_green_wastes set.
@@ -69,25 +88,26 @@ class RobotMission(Model):
         for _ in range(num_green):
             x = random.randrange(0, width // 3)
             y = random.randrange(height)
-            agent = GreenRobotAgent(self)
+            agent = GreenRobotAgent(self, heuristic="astar")
             self.grid.place_agent(agent, (x, y))
             self.custom_agents.append(agent)
         
         for _ in range(num_yellow):
             x = random.randrange(0, 2 * (width // 3))
             y = random.randrange(height)
-            agent = YellowRobotAgent(self)
+            agent = YellowRobotAgent(self, heuristic="astar")
             self.grid.place_agent(agent, (x, y))
             self.custom_agents.append(agent)
         
         for _ in range(num_red):
             x = random.randrange(width)
             y = random.randrange(height)
-            agent = RedRobotAgent(self)
+            agent = RedRobotAgent(self, heuristic="astar")
             self.grid.place_agent(agent, (x, y))
             self.custom_agents.append(agent)
 
         print(f"[INIT] RobotMission initialized with grid {width}x{height} and {len(self.custom_agents)} agents.")
+        print()
         self.step_count = 0
 
     def get_zone(self, pos):
