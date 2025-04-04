@@ -78,20 +78,20 @@ def agent_portrayal(agent):
     if isinstance(agent, RadioactivityAgent):
         return None  # Skip dynamic drawing for background agents.
     if isinstance(agent, GreenRobotAgent):
-        return {"shape": GREEN_ROBOT_ICON, "size": 50, "zorder": 2}
+        return {"shape": GREEN_ROBOT_ICON, "size": 50, "zorder": 1}
     if isinstance(agent, YellowRobotAgent):
-        return {"shape": YELLOW_ROBOT_ICON, "size": 50, "zorder": 2}
+        return {"shape": YELLOW_ROBOT_ICON, "size": 50, "zorder": 1}
     if isinstance(agent, RedRobotAgent):
-        return {"shape": RED_ROBOT_ICON, "size": 50, "zorder": 2}
+        return {"shape": RED_ROBOT_ICON, "size": 50, "zorder": 1}
     if isinstance(agent, WasteAgent):
         if agent.waste_type == 'green':
-            return {"shape": GREEN_WASTE_ICON, "size": 40, "zorder": 1}
+            return {"shape": GREEN_WASTE_ICON, "size": 40, "zorder": 2}
         elif agent.waste_type == 'yellow':
-            return {"shape": YELLOW_WASTE_ICON, "size": 40, "zorder": 1}
+            return {"shape": YELLOW_WASTE_ICON, "size": 40, "zorder": 2}
         elif agent.waste_type == 'red':
-            return {"shape": RED_WASTE_ICON, "size": 40, "zorder": 1}
+            return {"shape": RED_WASTE_ICON, "size": 40, "zorder": 2}
     if isinstance(agent, WasteDisposalAgent):
-        return {"shape": DISPOSAL_ICON, "size": 50, "zorder": 1}
+        return {"shape": DISPOSAL_ICON, "size": 50, "zorder": 3}
     return {"marker": "o", "color": "gray", "size": 20, "zorder": 1}
 
 def draw_agent(ax, portrayal, pos):
