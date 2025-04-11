@@ -15,20 +15,25 @@ import random
 import threading
 
 class RobotMission(Model):
-    # All parameters now have default values.
     def __init__(self, width=30, height=30, num_green=5, num_yellow=3, num_red=2, num_waste=10):
         super().__init__()
         self.width = width
         self.height = height
         self.grid = MultiGrid(width, height, torus=False)
         
-        # We use self.custom_agents for all agents (since "agents" is reserved).
         self.custom_agents = []
-        
-        # Create a DataCollector to record waste count.
+        # Initialize counters for performance metrics.
+        self.waste_delivered_count = 0
+        self.step_count = 0
+
         self.datacollector = DataCollector(
             model_reporters={
-                "WasteCount": lambda m: sum(1 for agent in m.custom_agents if hasattr(agent, "waste_type"))
+                "WasteCount": lambda m: sum(1 for agent in m.custom_agents if hasattr(agent, "waste_type")),
+                "StepCount": lambda m: m.step_count,
+                "DeliveredWaste": lambda m: m.waste_delivered_count,
+                "TotalDistance": lambda m: sum(getattr(agent, "distance_traveled", 0)
+                                              for agent in m.custom_agents if hasattr(agent, "distance_traveled")),
+                "TimeToZeroWaste": lambda m: m.step_count if sum(1 for agent in m.custom_agents if hasattr(agent, "waste_type")) == 0 else None,
             }
         )
         
@@ -52,10 +57,10 @@ class RobotMission(Model):
         disposal_y = random.randrange(height)
         self.waste_disposal = WasteDisposalAgent(self, (eastern_x, disposal_y))
 
-        # Define gate positions (y-values where there’s an opening)
-        gate_y_positions = [5, 4, 3, 15, 14, 13, 25, 24, 23]  # Can be customized
+        # Define gate positions.
+        gate_y_positions = [5, 4, 3, 15, 14, 13, 25, 24, 23]
 
-        # Add vertical wall between z1 and z2 (x = width // 3)
+        # Add vertical wall between z1 and z2.
         wall_x1 = self.width // 3
         for y in range(self.height):
             if y not in gate_y_positions:
@@ -63,7 +68,7 @@ class RobotMission(Model):
                 self.grid.place_agent(wall, (wall_x1, y))
                 self.custom_agents.append(wall)
 
-        # Add vertical wall between z2 and z3 (x = 2 * width // 3)
+        # Add vertical wall between z2 and z3.
         wall_x2 = 2 * self.width // 3
         for y in range(self.height):
             if y not in gate_y_positions:
@@ -73,8 +78,7 @@ class RobotMission(Model):
                 self.grid.place_agent(self.waste_disposal, (eastern_x, disposal_y))
                 self.custom_agents.append(self.waste_disposal)
         
-        # Add WasteAgent (green waste initially placed in zone z1)
-        # and add them to the unassigned_green_wastes set.
+        # Add WasteAgent (green waste initially placed in zone z1).
         for _ in range(num_waste):
             x = random.randrange(0, width // 3)
             y = random.randrange(height)
@@ -108,7 +112,6 @@ class RobotMission(Model):
 
         print(f"[INIT] RobotMission initialized with grid {width}x{height} and {len(self.custom_agents)} agents.")
         print()
-        self.step_count = 0
 
     def get_zone(self, pos):
         x, y = pos
@@ -122,15 +125,20 @@ class RobotMission(Model):
     def step(self):
         self.step_count += 1
         print(f"\n=== Step {self.step_count} start ===")
-        self.datacollector.collect(self)
         waste_count = sum(1 for agent in self.custom_agents if hasattr(agent, "waste_type"))
         print(f"[MODEL] Waste Count: {waste_count}")
-        # Optionally, you can shuffle agents to randomize stepping order:
-        # random.shuffle(self.custom_agents)
         for agent in self.custom_agents:
-            # Print debug only for dynamic (robot) agents.
+            # Debug prints for dynamic agents.
             from objects import WasteAgent, RadioactivityAgent, WasteDisposalAgent
             if not isinstance(agent, (WasteAgent, RadioactivityAgent, WasteDisposalAgent)):
                 print(f"[MODEL] Stepping agent {agent} at position {agent.pos}")
             agent.step()
         print(f"=== Step {self.step_count} complete ===")
+        self.datacollector.collect(self)
+        
+        # Add these lines to print the current dataframe from the DataCollector:
+        df = self.datacollector.get_model_vars_dataframe()
+        print("DataCollector contents after this step:")
+        print("DataCollector contents after this step:")
+        print("DataCollector contents after this step:")
+        print(df)

@@ -10,7 +10,7 @@ from mesa.visualization import SolaraViz
 import solara
 import matplotlib.image as mpimg
 from matplotlib.figure import Figure
-from matplotlib import colors as mcolors
+from matplotlib import colors as mcolors, pyplot as plt
 from mesa.visualization.utils import update_counter
 import numpy as np
 
@@ -167,11 +167,44 @@ def CustomGrid(model):
     
     post_process(ax, model.width, model.height)
     return solara.FigureMatplotlib(fig)
-
+@solara.component
+def PerformanceGraph(model):
+    # Trigger the re-render whenever the model updates.
+    update_counter.get()  # <-- Add this call to update the component with new data.
+    
+    # Now retrieve the updated DataCollector data.
+    df = model.datacollector.get_model_vars_dataframe()
+    print("PerformanceGraph DataFrame:", df)
+    
+    if df.empty:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.text(0.5, 0.5, "No data collected yet", ha="center", va="center", fontsize=16)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        return solara.FigureMatplotlib(fig)
+    
+    steps = df["StepCount"].tolist()
+    waste_delivered = df["DeliveredWaste"].tolist()
+    total_distance = df["TotalDistance"].tolist()
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(steps, waste_delivered, label="Delivered Waste")
+    ax.plot(steps, total_distance, label="Total Distance Traveled")
+    ax.set_xlabel("Simulation Steps")
+    ax.set_ylabel("Count")
+    ax.set_title("Performance Metrics")
+    ax.legend()
+    return solara.FigureMatplotlib(fig)
 # Define interactive model parameters for the dashboard controls
 model_params = {
-    "width": 30,
-    "height": 30,
+    "width": {
+        "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
+        "label": "width:"
+    },
+    "height": {
+        "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
+        "label": "height:"
+    },
     "num_green": {
         "type": "SliderInt", "value": 5, "min": 0, "max": 20, "step": 1,
         "label": "Number of Green Robots:"
@@ -198,7 +231,7 @@ initial_model = RobotMission(width=30, height=30, num_green=5, num_yellow=3, num
 # Create the SolaraViz page with the custom grid component and interactive controls
 page = SolaraViz(
     initial_model,
-    components=[CustomGrid],
+    components=[CustomGrid, PerformanceGraph],
     model_params=model_params,
     name="Robot Cleanup Mission Dashboard"
 )
