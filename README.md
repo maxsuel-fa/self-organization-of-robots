@@ -8,41 +8,42 @@ Interactive and batch simulation of multi‑robot waste collection in three radi
 2. [Key Features](#features)  
 3. [Installation](#installation)  
 4. [How to Run](#running)  
-   · [Interactive Dashboard (`server.py`)](#server)  
-   · [Single Run CLI (`run.py`)](#run)  
-   · [Batch Experiments (`multiple_simulations.py`)](#batch)  
-5. [Experimental Results](#results)  
-6. [How the Data Were Produced](#data)
+   * [Interactive Dashboard (`server.py`)](#server)  
+   * [Single Run CLI (`run.py`)](#run)  
+   * [Batch Experiments (`multiple_simulations.py`)](#batch)  
+5. [Dashboard Interface](#ui)  
+6. [Experimental Results](#results)  
+7. [Heuristic Explanation & Analysis](#analysis)  
+8. [How the Data Were Produced](#data)
 
 ---
 
 <a id="architecture"></a>
 ## 1. Project Architecture
 
+![UML Diagram](docs/img/uml.png)
+
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
-| **Model** | `model.py` | Class `RobotMission` — grid (`MultiGrid`), data collection, stop‑condition (`finished`, `running`). |
-| **Agents** | `agents.py` | Three robot types (`Green`, `Yellow`, `Red`), each using one of four target‑selection heuristics: `astar`, `closest`, `random`, `min_total_distance`. |
+| **Model** | `model.py` | Class `RobotMission` — grid, data collection, auto‑stop when waste = 0. |
+| **Agents** | `agents.py` | Robots (`Green`, `Yellow`, `Red`) implementing four heuristics: `astar`, `closest`, `random`, `min_total_distance`. |
 | **Passive Objects** | `objects.py` | Waste, radioactivity, walls, disposal point. |
-| **Web UI** | `server.py` | Solara dashboard: colored grid, PNG/SVG icons, dual‑axis performance plot, sliders & heuristic selector. |
-| **CLI Runners** | `run.py`, `multiple_simulations.py` | Single run until waste‑free; and automated parameter sweep. |
-| **Data** | `batch_results/*.csv` | Output of the batch script, ready for plotting or further analysis. |
+| **Web UI** | `server.py` | Solara dashboard with animated grid and dual‑axis performance chart. |
+| **CLI Runners** | `run.py`, `multiple_simulations.py` | Single run; automated parameter sweep with 10 repetitions. |
+| **Data** | `batch_results/*.csv` | Output of batch experiments for analysis. |
 
 ---
 
 <a id="features"></a>
 ## 2. Key Features
 
-* **Three zones** (`z1 → z3`) with increasing radioactivity.
-* **Waste conversion**  
-  · 2 green → 1 yellow (done by green robot)  
-  · 2 yellow → 1 red (done by yellow robot)
-* **Conditional walls**: built only when `astar` is the selected heuristic.
-* **Auto stop**: simulation ends automatically when no `WasteAgent` remains.
-* **Interactive dashboard**:  
-  · Animated grid with icons  
-  · Control panel (dimensions, robots, waste, heuristic)  
-  · Performance graph with left axis = total distance, right axis = delivered waste.
+* **Three radioactive zones** (`z1 → z3`).
+* **Waste conversion chain**  
+  * 2 green → 1 yellow (green robot)  
+  * 2 yellow → 1 red (yellow robot)
+* **Conditional walls**: placed only when the selected heuristic is `astar`.
+* **Automatic completion**: simulation halts when the grid is waste‑free.
+* **Interactive dashboard**: parameter sliders, heuristic selector, live grid, dual‑axis metrics.
 * **Batch runner**: 10 independent repetitions per scenario, averages written to CSV.
 
 ---
@@ -54,10 +55,8 @@ Interactive and batch simulation of multi‑robot waste collection in three radi
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install mesa solara matplotlib numpy
-```
-
 ---
-
+```
 <a id="running"></a>
 ## 4. How to Run
 
@@ -67,8 +66,8 @@ pip install mesa solara matplotlib numpy
 ```bash
 solara run server.py
 ```
-Open the URL shown in the terminal (e.g. `http://localhost:8765`).  
-Pick a heuristic, adjust sliders, hit **Run ▶**. The loop stops once all waste is disposed.
+Open the provided URL (e.g. `http://localhost:8765`).  
+Choose a heuristic, adjust parameters, and click **Run ▶**. The simulation stops automatically when all waste is disposed.
 
 <a id="run"></a>
 ### 4.2 Single Command‑Line Run
@@ -76,7 +75,7 @@ Pick a heuristic, adjust sliders, hit **Run ▶**. The loop stops once all waste
 ```bash
 python run.py
 ```
-Runs one simulation with the parameters hard‑coded inside `run.py`, printing step‑by‑step logs until the grid is waste‑free.
+Runs one simulation with parameters defined in `run.py`.
 
 <a id="batch"></a>
 ### 4.3 Batch Experiments
@@ -84,18 +83,27 @@ Runs one simulation with the parameters hard‑coded inside `run.py`, printing s
 ```bash
 python multiple_simulations.py
 ```
+Parameter grid: heuristics (`closest`, `random`, `min_total_distance`) × robots (1/2/4 per color) × waste (4/8/16 per color).  
+Each combination is executed **10 times**; averages are written to `batch_results/results_<timestamp>.csv`.
 
-* Parameter grid:  
-  * Heuristics = `closest`, `random`, `min_total_distance`  
-  * Robots per color = 1 / 2 / 4  
-  * Waste per color  = 4 / 8 / 16  
-* Each scenario is executed **10 times**; metrics are averaged.  
-* Output CSV is saved to `batch_results/results_<timestamp>.csv`.
+---
+
+<a id="ui"></a>
+## 5. Dashboard Interface
+
+| Area | Description |
+|------|-------------|
+| **Controls** | *Play Interval* (ms), *Render Interval* (steps), **Reset/Play/Step** buttons. |
+| **Model Parameters** | Sliders for robot counts and initial waste, plus heuristic selector. Changing any control restarts the simulation. |
+| **Grid Panel** | Colored background (green, yellow, pink). Icons for robots, waste, disposal bomb; gray walls visible only with A*. |
+| **Performance Chart** | Red line = total distance (left y‑axis). Blue line = delivered waste (right y‑axis, integer ticks, starts at 0). |
+
+![Robot Cleanup Dashboard](https://github.com/user-attachments/assets/f6810309-be3f-4481-968e-025ff7c117b2)
 
 ---
 
 <a id="results"></a>
-## 5. Experimental Results  
+## 6. Experimental Results  
 *Averages of 10 runs per scenario (column **`delivered_waste`** omitted).*
 
 | Heuristic | Robots/Color | Waste/Color | Avg. Steps | Avg. Distance |
@@ -130,18 +138,27 @@ python multiple_simulations.py
 
 ---
 
+<a id="analysis"></a>
+## 7. Heuristic Explanation & Analysis
+
+| Heuristic | Principle | Avg. Steps | Avg. Distance | Verdict |
+|-----------|-----------|-----------|---------------|---------|
+| **closest** | Target the nearest eligible waste. | **229.9** | **433.0** | Best overall. |
+| **min_total_distance** | Minimize *(robot→waste + waste→goal)* distance. | 230.9 | 439.3 | Very close second. |
+| **random** | Choose a random eligible waste. | 239.8 | 484.2 | Worst performer. |
+
+> **Conclusion:** The simple *closest* heuristic is marginally—but consistently—the most efficient in both speed and distance. The more elaborate *min total distance* offers no significant advantage, while *random* predictably wastes motion.
+
+---
+
 <a id="data"></a>
-## 6. How the Data Were Produced
+## 8. How the Data Were Produced
 
-`multiple_simulations.py` loops over every combination of  
-`heuristic × robots × waste`.  
-For each combination:
+`multiple_simulations.py` sweeps `heuristic × robots(1/2/4) × waste(4/8/16)`.
 
-1. **Runs** 10 independent simulations (cap = `MAX_STEPS = 1000`).  
-2. **Measures** per run:  
-   * `step_count` — steps until grid is waste‑free.  
-   * Total distance travelled — sum of `distance_traveled` for all robots.  
-3. **Averages** these two metrics across the 10 runs.  
-4. **Writes** one CSV row with parameters + averaged metrics.  
+1. Runs **10 independent simulations** per combination (`MAX_STEPS = 1000`).  
+2. Records `step_count` and total distance travelled.  
+3. Averages these metrics across the 10 runs.  
+4. Writes one line per combination to a timestamped CSV in `batch_results/`.  
 
-The table above is a direct copy of that CSV (ignoring the `delivered_waste` column, as requested).
+The table in section 6 comes directly from that CSV, omitting the `delivered_waste` column.
