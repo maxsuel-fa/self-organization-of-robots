@@ -46,8 +46,24 @@ Interactive and batch simulation of multi‑robot waste collection in three radi
 
 ---
 
+<a id="comm"></a>
+## 3. Communication & Coordination
+
+| Mechanism & Location | Purpose | Design Rationale |
+|----------------------|---------|------------------|
+| **Local perception** (`BaseRobot.perceive()`) | Robots sense the eight neighbouring cells every step. | Keeps agents fully decentralised and scalable; no broadcasting needed. |
+| **Task pools** (`model.unassigned_*_wastes` sets) | Global queues of yet‑to‑be‑collected waste for each colour. | `set` gives *O(1)* membership tests; simple ownership semantics. |
+| **Locks** (`model.*_lock`) | Guarantee exclusive access when popping from task pools. | Prevents race conditions caused by UI callbacks with minimal overhead. |
+| **Assignment lists** (`robot.assigned_wastes`) | Each robot stores the wastes it owns. | Avoids duplicate work; clarifies responsibility. |
+| **Progress counters** (`model.waste_delivered_count`, `DataCollector`) | Central collection of performance metrics. | Single source of truth for the dashboard and batch scripts. |
+| **UI invalidation** (`update_counter` in `server.py`) | Triggers Solara re‑render each step. | Clean separation between simulation core and visual layer. |
+
+> **Design choice:** We adopted a **stigmergic** communication style—robots interact **only via the environment** and small shared sets protected by locks. This mirrors biological swarms, reduces code complexity, and scales to many agents without message overhead.
+
+---
+
 <a id="installation"></a>
-## 3. Installation
+## 4. Installation
 
 ```bash
 python -m venv venv
@@ -56,10 +72,10 @@ pip install mesa solara matplotlib numpy
 ---
 ```
 <a id="running"></a>
-## 4. How to Run
+## 5. How to Run
 
 <a id="server"></a>
-### 4.1 Interactive Dashboard
+### 5.1 Interactive Dashboard
 
 ```bash
 solara run server.py
@@ -68,7 +84,7 @@ Open the provided URL (e.g. `http://localhost:8765`).
 Choose a heuristic, adjust parameters, and click **Run ▶**. The simulation stops automatically when all waste is disposed.
 
 <a id="run"></a>
-### 4.2 Single Command‑Line Run
+### 5.2 Single Command‑Line Run
 
 ```bash
 python run.py
@@ -76,7 +92,7 @@ python run.py
 Runs one simulation with parameters defined in `run.py`.
 
 <a id="batch"></a>
-### 4.3 Batch Experiments
+### 5.3 Batch Experiments
 
 ```bash
 python multiple_simulations.py
@@ -87,7 +103,7 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 ---
 
 <a id="ui"></a>
-## 5. Dashboard Interface
+## 6. Dashboard Interface
 
 | Area | Description |
 |------|-------------|
@@ -101,7 +117,7 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 ---
 
 <a id="results"></a>
-## 6. Experimental Results  
+## 7. Experimental Results  
 *Averages of 10 runs per scenario (column **`delivered_waste`** omitted).*
 
 | Heuristic | Robots/Color | Waste/Color | Avg. Steps | Avg. Distance |
@@ -137,7 +153,7 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 ---
 
 <a id="analysis"></a>
-## 7. Heuristic Explanation & Analysis
+## 8. Heuristic Explanation & Analysis
 
 | Heuristic | Principle | Avg. Steps | Avg. Distance | Verdict |
 |-----------|-----------|-----------|---------------|---------|
@@ -150,7 +166,7 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 ---
 
 <a id="data"></a>
-## 8. How the Data Were Produced
+## 9. How the Data Were Produced
 
 `multiple_simulations.py` sweeps `heuristic × robots(1/2/4) × waste(4/8/16)`.
 
