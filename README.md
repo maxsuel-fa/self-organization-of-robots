@@ -21,8 +21,6 @@ Interactive and batch simulation of multi‑robot waste collection in three radi
 <a id="architecture"></a>
 ## 1. Project Architecture
 
-![UML Diagram](docs/img/uml.png)
-
 | Layer | Files | Responsibility |
 |-------|-------|----------------|
 | **Model** | `model.py` | Class `RobotMission` — grid, data collection, auto‑stop when waste = 0. |
