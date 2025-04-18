@@ -2,19 +2,20 @@
 Interactive and batch simulation of multi‑robot waste collection in three radioactive zones.
 
 ---
-
 ## Table of Contents
 1. [Project Architecture](#architecture)  
 2. [Key Features](#features)  
-3. [Installation](#installation)  
-4. [How to Run](#running)  
+3. [Communication & Coordination](#comm)  
+4. [Installation](#installation)  
+5. [How to Run](#running)  
    * [Interactive Dashboard (`server.py`)](#server)  
    * [Single Run CLI (`run.py`)](#run)  
    * [Batch Experiments (`multiple_simulations.py`)](#batch)  
-5. [Dashboard Interface](#ui)  
-6. [Experimental Results](#results)  
-7. [Heuristic Explanation & Analysis](#analysis)  
-8. [How the Data Were Produced](#data)
+6. [Dashboard Interface](#ui)  
+7. [A* Heuristic & Dynamic Walls](#astar)  
+8. [Experimental Results](#results)  
+9. [Heuristic Explanation & Analysis](#analysis)  
+10. [How the Data Were Produced](#data)
 
 ---
 
@@ -116,9 +117,30 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 
 ---
 
+<a id="astar"></a>
+## 7. A* Heuristic & Dynamic Walls
+
+When the **A\*** heuristic is selected the simulation switches to a *structured‑environment* mode that inserts two vertical walls to separate the three zones.  
+
+| Aspect | Behaviour / Code Location | Reasoning |
+|--------|---------------------------|-----------|
+| **Wall creation** | `model.py` → inside `RobotMission.__init__`<br>`if heuristic == "astar":`<br>• build walls at `x = width/3` and `x = 2·width/3`<br>• leave nine “gate” openings (`gate_y_positions`) to avoid dead‑ends | A\* can compute routes through gateways, so walls help enforce zone boundaries and create realistic corridors without trapping agents. |
+| **Wall avoidance** | `BaseRobot.astar_path()` skips neighbours that contain a `wallAgent`; `move_towards()` similarly aborts a step that would hit a wall. | Ensures path‑finding treats walls as hard obstacles while still allowing diagonal moves through gates. |
+| **Wall removal for other heuristics** | If the chosen heuristic is *not* `"astar"`, the `if heuristic == "astar"` block is bypassed, so no walls are placed. | Simpler heuristics (`closest`, `random`, `min_total_distance`) are local/greedy and would get stuck or oscillate without global planning. Removing walls keeps the scenario fair for all strategies. |
+| **Visualization** | Grey dots rendered by `server.py` when walls exist; hidden otherwise. | Gives immediate visual feedback that A\* is active. |
+
+### Why pair A\* with walls?
+
+* **Benchmarking** – Walls make the environment non‑trivial, exposing weaknesses in naive heuristics and showcasing A\*’s ability to plan around obstacles.  
+* **Scalability** – Gates provide controlled choke‑points, preventing excessive robot clustering inside a single zone.  
+* **Fair comparison** – Disabling walls for non‑A\* heuristics avoids artificially handicapping them, keeping performance comparisons meaningful.
+
+*In short, the A\* mode demonstrates global path‑planning in a constrained environment, while other heuristics operate in an open field where their simplicity is not penalised by impassable barriers.*
+
+---
+
 <a id="results"></a>
-## 7. Experimental Results  
-*Averages of 10 runs per scenario (column **`delivered_waste`** omitted).*
+## 8. Experimental Results  
 
 | Heuristic | Robots/Color | Waste/Color | Avg. Steps | Avg. Distance |
 |-----------|--------------|-------------|------------|---------------|
@@ -153,7 +175,7 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 ---
 
 <a id="analysis"></a>
-## 8. Heuristic Explanation & Analysis
+## 9. Heuristic Explanation & Analysis
 
 | Heuristic | Principle | Avg. Steps | Avg. Distance | Verdict |
 |-----------|-----------|-----------|---------------|---------|
@@ -166,7 +188,7 @@ Each combination is executed **10 times**; averages are written to `batch_resul
 ---
 
 <a id="data"></a>
-## 9. How the Data Were Produced
+## 10. How the Data Were Produced
 
 `multiple_simulations.py` sweeps `heuristic × robots(1/2/4) × waste(4/8/16)`.
 
