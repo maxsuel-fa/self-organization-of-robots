@@ -30,6 +30,7 @@ Interactive and batch simulation of multi‑robot waste collection in three radi
 | **Web UI** | `server.py` | Solara dashboard with animated grid and dual‑axis performance chart. |
 | **CLI Runners** | `run.py`, `multiple_simulations.py` | Single run; automated parameter sweep with 10 repetitions. |
 | **Data** | `batch_results/*.csv` | Output of batch experiments for analysis. |
+![uml_diagram_sma](https://github.com/user-attachments/assets/09c067c0-982a-4bd4-b51c-c1d8aa32e280)
 
 ---
 
