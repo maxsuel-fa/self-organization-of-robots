@@ -14,8 +14,12 @@ if __name__ == '__main__':
     num_green = 5
     num_yellow = 3
     num_red = 2
-    num_waste = 10
+    num_green_waste = 1
+    num_yellow_waste = 0
+    num_red_waste = 2
+    heuristic = "astar"
 
-    model = RobotMission(width, height, num_green, num_yellow, num_red, num_waste)
-    for i in range(20):
+    model = RobotMission(width, height, num_green, num_yellow, num_red,
+                         num_green_waste, num_yellow_waste, num_red_waste, heuristic=heuristic)
+    for i in range(200):
         model.step()

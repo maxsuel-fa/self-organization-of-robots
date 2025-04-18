@@ -169,42 +169,57 @@ def CustomGrid(model):
     return solara.FigureMatplotlib(fig)
 @solara.component
 def PerformanceGraph(model):
-    # Trigger the re-render whenever the model updates.
-    update_counter.get()  # <-- Add this call to update the component with new data.
-    
-    # Now retrieve the updated DataCollector data.
+    from matplotlib.ticker import MaxNLocator       # ⬅️ for integer ticks
+    update_counter.get()
+
     df = model.datacollector.get_model_vars_dataframe()
-    print("PerformanceGraph DataFrame:", df)
-    
     if df.empty:
         fig, ax = plt.subplots(figsize=(8, 6))
-        ax.text(0.5, 0.5, "No data collected yet", ha="center", va="center", fontsize=16)
-        ax.set_xticks([])
-        ax.set_yticks([])
+        ax.text(0.5, 0.5, "No data collected yet",
+                ha="center", va="center", fontsize=16)
+        ax.set_xticks([]); ax.set_yticks([])
         return solara.FigureMatplotlib(fig)
-    
-    steps = df["StepCount"].tolist()
+
+    # ── data ────────────────────────────────────────────────────────────────
+    steps           = df["StepCount"].tolist()
     waste_delivered = df["DeliveredWaste"].tolist()
-    total_distance = df["TotalDistance"].tolist()
-    
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(steps, waste_delivered, label="Delivered Waste")
-    ax.plot(steps, total_distance, label="Total Distance Traveled")
-    ax.set_xlabel("Simulation Steps")
-    ax.set_ylabel("Count")
-    ax.set_title("Performance Metrics")
-    ax.legend()
+    total_distance  = df["TotalDistance"].tolist()
+
+    # ── dual‑axis figure ────────────────────────────────────────────────────
+    fig, ax_left = plt.subplots(figsize=(8, 6))
+
+    # Left axis – total distance (red)
+    ax_left.set_xlabel("Simulation Steps")
+    ax_left.set_ylabel("Total Distance Traveled", color="tab:red")
+    ln1 = ax_left.plot(steps, total_distance,
+                       label="Total Distance Traveled",
+                       color="tab:red")
+    ax_left.tick_params(axis='y', labelcolor="tab:red")
+
+    # Right axis – delivered waste (blue), integer scale 0 … max(5, current max)
+    ax_right = ax_left.twinx()
+    ax_right.set_ylabel("Delivered Waste", color="tab:blue")
+    ln2 = ax_right.plot(steps, waste_delivered,
+                        label="Delivered Waste",
+                        color="tab:blue")
+    ax_right.tick_params(axis='y', labelcolor="tab:blue")
+
+    # integer, positive ticks starting at 0
+    ymax = max(max(waste_delivered, default=0)+1, 5)
+    ax_right.set_ylim(0, ymax)
+    ax_right.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # Combined legend
+    lines  = ln1 + ln2
+    labels = [l.get_label() for l in lines]
+    ax_left.legend(lines, labels, loc="upper left")
+
+    fig.tight_layout()
     return solara.FigureMatplotlib(fig)
+
+
 # Define interactive model parameters for the dashboard controls
 model_params = {
-    "width": {
-        "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
-        "label": "width:"
-    },
-    "height": {
-        "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
-        "label": "height:"
-    },
     "num_green": {
         "type": "SliderInt", "value": 5, "min": 0, "max": 20, "step": 1,
         "label": "Number of Green Robots:"
@@ -217,14 +232,35 @@ model_params = {
         "type": "SliderInt", "value": 2, "min": 0, "max": 20, "step": 1,
         "label": "Number of Red Robots:"
     },
-    "num_waste": {
+    "num_green_waste": {
         "type": "SliderInt", "value": 10, "min": 0, "max": 50, "step": 1,
-        "label": "Initial Number of Waste items:"
-    }
+        "label": "Initial Green Waste:"
+    },
+    "num_yellow_waste": {
+        "type": "SliderInt", "value": 10, "min": 0, "max": 50, "step": 1,
+        "label": "Initial Yellow Waste:"
+    },
+    "num_red_waste": {
+        "type": "SliderInt", "value": 10, "min": 0, "max": 50, "step": 1,
+        "label": "Initial Red Waste:"
+    },
+    "width": {
+        "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
+        "label": "width:"
+    },
+    "height": {
+        "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
+        "label": "height:"
+    },
 }
 
+
+# Heuristic options:
+# "astar", "closest", "random", "min_total_distance"
+
 # Instantiate the model with initial parameters
-initial_model = RobotMission(width=30, height=30, num_green=5, num_yellow=3, num_red=2, num_waste=10)
+initial_model = RobotMission(width=30, height=30, num_green=5, num_yellow=3, num_red=2,
+                             num_green_waste=10, num_yellow_waste=5, num_red_waste=2, heuristic="astar")
 
 
 

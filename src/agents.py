@@ -79,7 +79,7 @@ class BaseRobot(Agent):
 
     def follow_path(self, path):
         if path:
-            print(f"[DEBUG] Following A* path: {path}")
+            #print(f"[DEBUG] Following A* path: {path}")
             next_pos = path[0]
             if next_pos != self.pos:
                 self.model.grid.move_agent(self, next_pos)
@@ -157,7 +157,7 @@ class BaseRobot(Agent):
         for obj in cell_contents:
             if hasattr(obj, "waste_type") and obj.waste_type == target_type:
                 if obj in self.assigned_wastes:
-                    print(f"    {self.__class__.__name__} at {self.pos} picking up assigned {target_type} waste.")
+                    #print(f"    {self.__class__.__name__} at {self.pos} picking up assigned {target_type} waste.")
                     self.carrying.append(target_type)
                     self.assigned_wastes.remove(obj)
                     self.model.grid.remove_agent(obj)
@@ -186,7 +186,7 @@ class GreenRobotAgent(BaseRobot):
         required = 2
         with self.model.green_lock:
             if len(self.model.unassigned_green_wastes) < required:
-                print("    [Green] Not enough unassigned green wastes available.")
+                #print("    [Green] Not enough unassigned green wastes available.")
                 return
             available = list(self.model.unassigned_green_wastes)
             if self.heuristic == "closest":
@@ -208,10 +208,10 @@ class GreenRobotAgent(BaseRobot):
             for waste in available[:required]:
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_green_wastes.remove(waste)
-        print(f"    [Green] Assigned green wastes: {self.assigned_wastes}")
+        #print(f"    [Green] Assigned green wastes: {self.assigned_wastes}")
 
     def step(self):
-        print(f"[Green] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
+        #print(f"[Green] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
         self.assign_wastes()
 
         if "yellow" in self.carrying:
@@ -226,12 +226,12 @@ class GreenRobotAgent(BaseRobot):
                     if new_pos != self.pos:
                         self.model.grid.move_agent(self, new_pos)
                         self.distance_traveled += 1
-                if new_pos != self.pos:
-                    print(f"    [Green] Transporting yellow waste east to {new_pos}")
-                else:
-                    print(f"    [Green] Blocked en route to drop yellow at {self.pos}")
+                #if new_pos != self.pos:
+                    #print(f"    [Green] Transporting yellow waste east to {new_pos}")
+                #else:
+                    #print(f"    [Green] Blocked en route to drop yellow at {self.pos}")
             else:
-                print(f"    [Green] At eastern boundary of z1, dropping yellow waste at {self.pos}.")
+                #print(f"    [Green] At eastern boundary of z1, dropping yellow waste at {self.pos}.")
                 self.carrying.remove("yellow")
                 from objects import WasteAgent
                 new_waste = WasteAgent(self.model, 'yellow', self.pos)
@@ -253,14 +253,14 @@ class GreenRobotAgent(BaseRobot):
                     if new_pos != self.pos:
                         self.model.grid.move_agent(self, new_pos)
                         self.distance_traveled += 1
-                print(f"    [Green] Moving towards assigned green waste at {target}, new position {new_pos}")
-            else:
-                print("    [Green] No assigned green waste found.")
+                #print(f"    [Green] Moving towards assigned green waste at {target}, new position {new_pos}")
+            #else:
+                #print("    [Green] No assigned green waste found.")
 
             self.pick_up_if_present("green")
 
             if self.carrying.count("green") == 2:
-                print(f"    [Green] Transforming 2 green wastes into 1 yellow waste at {self.pos}")
+                #print(f"    [Green] Transforming 2 green wastes into 1 yellow waste at {self.pos}")
                 for _ in range(2):
                     self.carrying.remove("green")
                 self.carrying.append("yellow")
@@ -276,7 +276,7 @@ class YellowRobotAgent(BaseRobot):
         required = 2
         with self.model.yellow_lock:
             if len(self.model.unassigned_yellow_wastes) < required:
-                print("    [Yellow] Not enough unassigned yellow wastes available.")
+                #print("    [Yellow] Not enough unassigned yellow wastes available.")
                 return
             available = list(self.model.unassigned_yellow_wastes)
             if self.heuristic == "closest":
@@ -298,10 +298,10 @@ class YellowRobotAgent(BaseRobot):
             for waste in available[:required]:
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_yellow_wastes.remove(waste)
-        print(f"    [Yellow] Assigned yellow wastes: {self.assigned_wastes}")
+        #print(f"    [Yellow] Assigned yellow wastes: {self.assigned_wastes}")
 
     def step(self):
-        print(f"[Yellow] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
+        #print(f"[Yellow] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
         self.assign_wastes()
 
         if "red" in self.carrying:
@@ -315,12 +315,12 @@ class YellowRobotAgent(BaseRobot):
                     new_pos = self.move_towards(delivery_target)
                     if new_pos != self.pos:
                         self.model.grid.move_agent(self, new_pos)
-                if new_pos != self.pos:
-                    print(f"    [Yellow] Transporting red waste to {new_pos}")
-                else:
-                    print(f"    [Yellow] Blocked en route to drop red at {self.pos}")
+                #if new_pos != self.pos:
+                #    print(f"    [Yellow] Transporting red waste to {new_pos}")
+                #else:
+                #    print(f"    [Yellow] Blocked en route to drop red at {self.pos}")
             else:
-                print(f"    [Yellow] At eastern boundary of allowed zones, dropping red waste at {self.pos}.")
+                #print(f"    [Yellow] At eastern boundary of allowed zones, dropping red waste at {self.pos}.")
                 self.carrying.remove("red")
                 from objects import WasteAgent
                 new_waste = WasteAgent(self.model, 'red', self.pos)
@@ -341,10 +341,10 @@ class YellowRobotAgent(BaseRobot):
                     new_pos = self.move_towards(target)
                     if new_pos != self.pos:
                         self.model.grid.move_agent(self, new_pos)
-                print(f"    [Yellow] Moving towards assigned yellow waste at {target}, new position {new_pos}")
+                #print(f"    [Yellow] Moving towards assigned yellow waste at {target}, new position {new_pos}")
                 self.pick_up_if_present("yellow")
         if self.carrying.count("yellow") == 2:
-            print(f"    [Yellow] Transforming 2 yellow wastes into 1 red waste at {self.pos}")
+            #print(f"    [Yellow] Transforming 2 yellow wastes into 1 red waste at {self.pos}")
             for _ in range(2):
                 self.carrying.remove("yellow")
             self.carrying.append("red")
@@ -360,7 +360,7 @@ class RedRobotAgent(BaseRobot):
         required = 1
         with self.model.red_lock:
             if len(self.model.unassigned_red_wastes) < required:
-                print("    [Red] Not enough unassigned red wastes available.")
+                #print("    [Red] Not enough unassigned red wastes available.")
                 return
             available = list(self.model.unassigned_red_wastes)
             if self.heuristic == "closest":
@@ -381,15 +381,15 @@ class RedRobotAgent(BaseRobot):
                 available.sort(key=astar_cost)
             self.assigned_wastes.add(available[0])
             self.model.unassigned_red_wastes.remove(available[0])
-        print(f"    [Red] Assigned red waste: {self.assigned_wastes}")
+        #print(f"    [Red] Assigned red waste: {self.assigned_wastes}")
 
     def step(self):
-        print(f"[Red] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
+        #print(f"[Red] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
         self.assign_wastes()
         if "red" in self.carrying:
             disposal_pos = self.model.waste_disposal.pos
             if self.pos == disposal_pos:
-                print(f"    [Red] At disposal cell {self.pos}, dropping red waste.")
+                #print(f"    [Red] At disposal cell {self.pos}, dropping red waste.")
                 self.carrying.remove("red")
                 # Increase the delivered waste counter.
                 self.model.waste_delivered_count += 1
@@ -402,7 +402,7 @@ class RedRobotAgent(BaseRobot):
                     if new_pos != self.pos:
                         self.model.grid.move_agent(self, new_pos)
                         self.distance_traveled += 1
-                print(f"    [Red] Moving toward disposal at {disposal_pos}, new position {new_pos}")
+                #print(f"    [Red] Moving toward disposal at {disposal_pos}, new position {new_pos}")
             return
 
         assigned = self.get_closest_assigned_waste("red")
@@ -416,6 +416,6 @@ class RedRobotAgent(BaseRobot):
                 if new_pos != self.pos:
                     self.model.grid.move_agent(self, new_pos)
                     self.distance_traveled += 1
-            print(f"    [Red] Moving toward assigned red waste at {target}, new position {new_pos}")
+            #print(f"    [Red] Moving toward assigned red waste at {target}, new position {new_pos}")
             self.pick_up_if_present("red")
         return
