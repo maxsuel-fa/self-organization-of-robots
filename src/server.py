@@ -230,27 +230,27 @@ def GameStatus(model):
 # Define interactive model parameters for the dashboard controls
 model_params = {
     "num_green": {
-        "type": "SliderInt", "value": 5, "min": 0, "max": 20, "step": 1,
+        "type": "SliderInt", "value": 2, "min": 0, "max": 20, "step": 1,
         "label": "Number of Green Robots:"
     },
     "num_yellow": {
-        "type": "SliderInt", "value": 3, "min": 0, "max": 20, "step": 1,
+        "type": "SliderInt", "value": 1, "min": 0, "max": 20, "step": 1,
         "label": "Number of Yellow Robots:"
     },
     "num_red": {
-        "type": "SliderInt", "value": 2, "min": 0, "max": 20, "step": 1,
+        "type": "SliderInt", "value": 1, "min": 0, "max": 20, "step": 1,
         "label": "Number of Red Robots:"
     },
     "num_green_waste": {
-        "type": "SliderInt", "value": 10, "min": 0, "max": 50, "step": 1,
+        "type": "SliderInt", "value": 2, "min": 0, "max": 50, "step": 1,
         "label": "Initial Green Waste:"
     },
     "num_yellow_waste": {
-        "type": "SliderInt", "value": 10, "min": 0, "max": 50, "step": 1,
+        "type": "SliderInt", "value": 1, "min": 0, "max": 50, "step": 1,
         "label": "Initial Yellow Waste:"
     },
     "num_red_waste": {
-        "type": "SliderInt", "value": 10, "min": 0, "max": 50, "step": 1,
+        "type": "SliderInt", "value": 0, "min": 0, "max": 50, "step": 1,
         "label": "Initial Red Waste:"
     },
     "width": {

@@ -31,6 +31,10 @@ class RobotMission(Model):
         self.waste_delivered_count = 0
         self.step_count = 0
 
+        #communicate between robots
+        self.message_board = []          # list of dicts
+        self.message_lock  = threading.Lock()
+
         self.datacollector = DataCollector(
             model_reporters={
                 "WasteCount": lambda m: sum(1 for agent in m.custom_agents if hasattr(agent, "waste_type")),
@@ -153,81 +157,71 @@ class RobotMission(Model):
     
     def step(self):
         self.step_count += 1
-        #print(f"\n=== Step {self.step_count} start ===")
-        waste_count = sum(1 for agent in self.custom_agents if hasattr(agent, "waste_type"))
-        #print(f"[MODEL] Waste Count: {waste_count}")
+
+        # run every agent -------------------------------------------------
         for agent in self.custom_agents:
-            # Debug prints for dynamic agents.
-            #if not isinstance(agent, (WasteAgent, RadioactivityAgent, WasteDisposalAgent)):
-                #print(f"[MODEL] Stepping agent {agent} at position {agent.pos}")
             agent.step()
-        #print(f"=== Step {self.step_count} complete ===")
+
+        # Data‑collector bookkeeping
         self.datacollector.collect(self)
-        
-        # Add these lines to print the current dataframe from the DataCollector:
-        df = self.datacollector.get_model_vars_dataframe()
-        #print("DataCollector contents after this step:")
-        #print("DataCollector contents after this step:")
-        #print("DataCollector contents after this step:")
-        #print(df)
-        # print a cool game over screen :)
+
+        # ── count every bag that still exists anywhere ───────────────────
         counts = {"green": 0, "yellow": 0, "red": 0}
 
         for a in self.custom_agents:
-            # waste that is still lying on the ground
+            # waste lying on the ground
             wt = getattr(a, "waste_type", None)
             if wt in counts:
                 counts[wt] += 1
-            # waste that a robot is currently carrying
+            # waste being carried
             if getattr(a, "carrying", None):
                 for w in a.carrying:
                     counts[w] += 1
+
+        # ── termination logic ────────────────────────────────────────────
+        # 1. SUCCESS – every bag is gone
         if all(v == 0 for v in counts.values()):
             self.status = "win"
             self.running = False
-        elif counts["green"] < 2 and counts["yellow"] < 2 and counts["red"] == 0:
+            return
+
+        # 2. GAME‑OVER – even in the best case no red bag can ever appear
+        #
+        #    • 2 green  → 1 yellow
+        #    • 2 yellow → 1 red
+        max_yellow = counts["yellow"] + counts["green"] // 2
+        max_red    = counts["red"]   + max_yellow    // 2
+
+        if max_red == 0:
             self.status = "gameover"
             self.running = False
-        else:
-            self.status = "running"
+            return
+
+        # 3. otherwise keep going
+        self.status = "running"
     
     @property
     def finished(self) -> bool:
         """
-        End the simulation when one of the following is true
-
-        1. SUCCESS  – every single bag has been disposed of:
-            • no WasteAgent left on the grid, and
-            • no robot is still carrying anything.
-
-        2. GAME OVER – it has become mathematically impossible to create a new
-        red bag, i.e.:
-            • fewer than two green bags in existence   AND
-            • fewer than two yellow bags in existence  AND
-            • zero red bags in existence.
-        (With those numbers no extra red can ever be produced, so the
-            remaining bags can never reach the disposal unit.)
+        Return True when the simulation should stop.
         """
-        # ―― count every bag that still exists anywhere ―────────────────────
+
+        # ── count every bag that still exists anywhere ───────────────────
         counts = {"green": 0, "yellow": 0, "red": 0}
 
         for a in self.custom_agents:
-            # waste that is still lying on the ground
             wt = getattr(a, "waste_type", None)
             if wt in counts:
                 counts[wt] += 1
-            # waste that a robot is currently carrying
             if getattr(a, "carrying", None):
                 for w in a.carrying:
                     counts[w] += 1
 
-        # 1. all gone  → success
+        # 1. SUCCESS – all bags gone
         if all(v == 0 for v in counts.values()):
             return True
 
-        # 2. cannot ever reach a red bag again → game over
-        if counts["green"] < 2 and counts["yellow"] < 2 and counts["red"] == 0:
-            return True
-
-        # otherwise keep going
-        return False
+        # 2. GAME‑OVER – no red can ever appear again
+        max_yellow = counts["yellow"] + counts["green"] // 2
+        max_red    = counts["red"]   + max_yellow    // 2
+        return max_red == 0
