@@ -11,11 +11,11 @@ from objects import wallAgent
 import heapq
 
 class BaseRobot(Agent):
-    DEBUG = True                          # ← flip to False to mute all logs
+    DEBUG = True                        # ← flip to False to mute all logs
     _uid_counter = 0                      # own id generator
 
     def __init__(self, model, heuristic="closest"):
-        super().__init__(model)           # keep Mesa’s 1‑arg call!
+        super().__init__(model)      
 
         # give every agent a *real* unique integer id
         self.unique_id = BaseRobot._uid_counter
@@ -328,7 +328,7 @@ class GreenRobotAgent(BaseRobot):
             self.rendezvous_pos = m["pos"]       # update goal
 
         # --- in the seeker’s part, right after arriving -----------------
-        if self.pos == self.rendezvous_pos:      # nobody here? i cant solve it better...
+        if self.partner_id and self.pos == self.rendezvous_pos:      # nobody here? i cant solve it better...
             others = [a for a in self.model.grid.get_cell_list_contents(self.pos)
                     if getattr(a,"unique_id",None)==self.partner_id]
             if not others:
