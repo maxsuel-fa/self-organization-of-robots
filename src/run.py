@@ -21,5 +21,7 @@ if __name__ == '__main__':
 
     model = RobotMission(width, height, num_green, num_yellow, num_red,
                          num_green_waste, num_yellow_waste, num_red_waste, heuristic=heuristic)
-    for i in range(200):
+    
+    MAX_STEPS = 10_000
+    while not model.finished and model.step_count < MAX_STEPS:
         model.step()

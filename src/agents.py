@@ -20,6 +20,10 @@ class BaseRobot(Agent):
         # New attribute: track the total distance traveled.
         self.distance_traveled = 0
 
+        self.scout_dir  = 1     # vertical: 1 = down, -1 = up
+        self.scout_hdir = 1     # horizontal: 1 = east, -1 = west
+        self.scout_col  = None  # current x‑column being scanned
+
     def sort_by_closest(self, available):
         return sorted(available, key=lambda waste: max(abs(waste.pos[0] - self.pos[0]), abs(waste.pos[1] - self.pos[1])))
 
@@ -167,6 +171,7 @@ class BaseRobot(Agent):
         return False
 
     def step(self):
+        self._update_seen_wastes()
         # Default behavior, not used by subclasses.
         allowed_waste = []
         target = self.get_closest_waste(allowed_waste)
@@ -175,6 +180,54 @@ class BaseRobot(Agent):
             new_pos = self.move_towards(target)
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
+    
+    def _update_seen_wastes(self, radius=8):
+        #Add wastes within < radius cells to model.seen_wastes.
+        r = radius
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                x, y = self.pos[0] + dx, self.pos[1] + dy
+                if self.model.grid.out_of_bounds((x, y)):
+                    continue
+                for obj in self.model.grid.get_cell_list_contents((x, y)):
+                    if hasattr(obj, "waste_type"):
+                        self.model.seen_wastes.add(obj)
+
+
+    def _scout_step(self):
+        zone_min, zone_max = {
+            "z1": (0, self.model.width // 3 - 1),
+            "z2": (self.model.width // 3, 2 * self.model.width // 3 - 1),
+            "z3": (2 * self.model.width // 3, self.model.width - 1),
+        }[self.allowed_zones()[-1]]
+
+        # start from current column (clamped to zone)
+        if self.scout_col is None:
+            self.scout_col = min(max(self.pos[0], zone_min), zone_max)
+
+        next_y = self.pos[1] + self.scout_dir
+
+        if next_y < 0 or next_y >= self.model.height:
+            # reached top/bottom → flip vertical dir & step horizontally
+            self.scout_dir *= -1
+            self.scout_col += self.scout_hdir
+
+            # if we ran past a horizontal edge, bounce and change h‑dir
+            if self.scout_col > zone_max:
+                self.scout_col = zone_max
+                self.scout_hdir = -1
+                self.scout_col += self.scout_hdir  # step back inside zone
+            elif self.scout_col < zone_min:
+                self.scout_col = zone_min
+                self.scout_hdir = 1
+                self.scout_col += self.scout_hdir
+
+            next_y = self.pos[1] + self.scout_dir  # recompute after turn
+
+        target = (self.scout_col, next_y)
+        if not self.model.grid.out_of_bounds(target):
+            self.model.grid.move_agent(self, target)
+
 
 class GreenRobotAgent(BaseRobot):
     def allowed_zones(self):
@@ -186,9 +239,16 @@ class GreenRobotAgent(BaseRobot):
         required = 2
         with self.model.green_lock:
             if len(self.model.unassigned_green_wastes) < required:
-                #print("    [Green] Not enough unassigned green wastes available.")
+                print("    [Green] Not enough unassigned green wastes available.")
                 return
-            available = list(self.model.unassigned_green_wastes)
+            
+            available = [
+                w for w in self.model.unassigned_green_wastes
+                if w in self.model.seen_wastes
+                and max(abs(w.pos[0]-self.pos[0]), abs(w.pos[1]-self.pos[1])) < 8
+            ]
+
+            #available = list(self.model.unassigned_green_wastes)
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
             elif self.heuristic == "random":
@@ -205,15 +265,29 @@ class GreenRobotAgent(BaseRobot):
                     delivery_dist = max(abs(waste.pos[0] - delivery_target[0]), abs(waste.pos[1] - delivery_target[1]))
                     return len(path) + delivery_dist
                 available.sort(key=astar_cost)
+
+            print(available)
+            if len(available) < required:
+                #print("    [Green] Not enough unassigned green wastes available.")
+                return
             for waste in available[:required]:
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_green_wastes.remove(waste)
         #print(f"    [Green] Assigned green wastes: {self.assigned_wastes}")
 
     def step(self):
-        #print(f"[Green] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
-        self.assign_wastes()
+        
+        # 0. Perception
+        self._update_seen_wastes()
+        print(self.model.seen_wastes)
 
+        # 1. Transform as soon as we hold 2 greens
+        if self.carrying.count("green") == 2:
+            for _ in range(2):
+                self.carrying.remove("green")
+            self.carrying.append("yellow")
+
+        # 2. Deliver yellow if have one
         if "yellow" in self.carrying:
             delivery_x = (self.model.width // 3) - 1
             delivery_target = (delivery_x, self.pos[1])
@@ -241,6 +315,10 @@ class GreenRobotAgent(BaseRobot):
                     self.model.unassigned_yellow_wastes.add(new_waste)
             return
 
+        # 3. Assign wastes
+        self.assign_wastes()
+
+        # 4. Hunt assigned greens or scout
         if self.carrying.count("green") < 2:
             assigned = self.get_closest_assigned_waste("green")
             if assigned:
@@ -254,7 +332,8 @@ class GreenRobotAgent(BaseRobot):
                         self.model.grid.move_agent(self, new_pos)
                         self.distance_traveled += 1
                 #print(f"    [Green] Moving towards assigned green waste at {target}, new position {new_pos}")
-            #else:
+            else:
+                self._scout_step()
                 #print("    [Green] No assigned green waste found.")
 
             self.pick_up_if_present("green")
@@ -278,7 +357,14 @@ class YellowRobotAgent(BaseRobot):
             if len(self.model.unassigned_yellow_wastes) < required:
                 #print("    [Yellow] Not enough unassigned yellow wastes available.")
                 return
-            available = list(self.model.unassigned_yellow_wastes)
+            
+            available = [
+                w for w in self.model.unassigned_yellow_wastes
+                if w in self.model.seen_wastes
+                and max(abs(w.pos[0]-self.pos[0]), abs(w.pos[1]-self.pos[1])) < 8
+            ]
+
+            #available = list(self.model.unassigned_yellow_wastes)
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
             elif self.heuristic == "random":
@@ -295,15 +381,30 @@ class YellowRobotAgent(BaseRobot):
                     delivery_dist = max(abs(waste.pos[0] - delivery_target[0]), abs(waste.pos[1] - delivery_target[1]))
                     return len(path) + delivery_dist
                 available.sort(key=astar_cost)
+            
+            if len(available) < required:
+                #print("    [Green] Not enough unassigned green wastes available.")
+                return
+            
             for waste in available[:required]:
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_yellow_wastes.remove(waste)
+            
         #print(f"    [Yellow] Assigned yellow wastes: {self.assigned_wastes}")
 
     def step(self):
-        #print(f"[Yellow] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
-        self.assign_wastes()
 
+        # 0. Perception
+        self._update_seen_wastes()
+        print(self.model.seen_wastes)
+
+        # 1. Transform as soon as we hold 2 yellow
+        if self.carrying.count("yellow") == 2:
+            for _ in range(2):
+                self.carrying.remove("yellow")
+            self.carrying.append("red")
+
+        # 2. Deliver red if have one
         if "red" in self.carrying:
             delivery_x = (2 * self.model.width // 3) - 1
             delivery_target = (delivery_x, self.pos[1])
@@ -330,6 +431,12 @@ class YellowRobotAgent(BaseRobot):
                     self.model.unassigned_red_wastes.add(new_waste)
             return
 
+        # 3. Assign wastes
+        self.assign_wastes()
+        print("Assigned wastes")
+        print(self.assigned_wastes)
+
+        # 4. Hunt for new yellow wastes or scout    
         if self.carrying.count("yellow") < 2:
             assigned = self.get_closest_assigned_waste("yellow")
             if assigned:
@@ -343,6 +450,9 @@ class YellowRobotAgent(BaseRobot):
                         self.model.grid.move_agent(self, new_pos)
                 #print(f"    [Yellow] Moving towards assigned yellow waste at {target}, new position {new_pos}")
                 self.pick_up_if_present("yellow")
+            else:
+                self._scout_step()
+
         if self.carrying.count("yellow") == 2:
             #print(f"    [Yellow] Transforming 2 yellow wastes into 1 red waste at {self.pos}")
             for _ in range(2):
@@ -362,7 +472,14 @@ class RedRobotAgent(BaseRobot):
             if len(self.model.unassigned_red_wastes) < required:
                 #print("    [Red] Not enough unassigned red wastes available.")
                 return
-            available = list(self.model.unassigned_red_wastes)
+            
+            available = [
+                w for w in self.model.unassigned_red_wastes
+                if w in self.model.seen_wastes
+                and max(abs(w.pos[0]-self.pos[0]), abs(w.pos[1]-self.pos[1])) < 8
+            ]
+            #available = list(self.model.unassigned_red_wastes)
+
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
             elif self.heuristic == "random":
@@ -379,12 +496,13 @@ class RedRobotAgent(BaseRobot):
                     disposal_dist = max(abs(waste.pos[0] - disposal[0]), abs(waste.pos[1] - disposal[1]))
                     return len(path) + disposal_dist
                 available.sort(key=astar_cost)
-            self.assigned_wastes.add(available[0])
-            self.model.unassigned_red_wastes.remove(available[0])
-        #print(f"    [Red] Assigned red waste: {self.assigned_wastes}")
+            if available:
+                self.assigned_wastes.add(available[0])
+                self.model.unassigned_red_wastes.remove(available[0])
+                #print(f"    [Red] Assigned red waste: {self.assigned_wastes}")
 
     def step(self):
-        #print(f"[Red] at {self.pos} carrying: {self.carrying}, assigned: {self.assigned_wastes}")
+        self._update_seen_wastes()
         self.assign_wastes()
         if "red" in self.carrying:
             disposal_pos = self.model.waste_disposal.pos
@@ -418,4 +536,6 @@ class RedRobotAgent(BaseRobot):
                     self.distance_traveled += 1
             #print(f"    [Red] Moving toward assigned red waste at {target}, new position {new_pos}")
             self.pick_up_if_present("red")
+        else:
+            self._scout_step()
         return

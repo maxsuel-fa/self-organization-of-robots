@@ -16,12 +16,13 @@ import threading
 
 class RobotMission(Model):
     def __init__(self, width=30, height=30, num_green=5, num_yellow=3, num_red=2,
-                 num_green_waste=10, num_yellow_waste=5, num_red_waste=2, heuristic="astar"):
+                 num_green_waste=10, num_yellow_waste=5, num_red_waste=2, heuristic="closest"):
         super().__init__()
         self.width = width
         self.height = height
         self.heuristic = heuristic
         self.grid = MultiGrid(width, height, torus=False)
+        self.seen_wastes: set[WasteAgent] = set()  
         self.running = True
 
         self.custom_agents = []

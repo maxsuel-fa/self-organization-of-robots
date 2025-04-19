@@ -259,8 +259,8 @@ model_params = {
 # "astar", "closest", "random", "min_total_distance"
 
 # Instantiate the model with initial parameters
-initial_model = RobotMission(width=30, height=30, num_green=5, num_yellow=3, num_red=2,
-                             num_green_waste=10, num_yellow_waste=5, num_red_waste=2, heuristic="astar")
+initial_model = RobotMission(width=30, height=40, num_green=2, num_yellow=2, num_red=2,
+                             num_green_waste=2, num_yellow_waste=0, num_red_waste=0, heuristic="closest")
 
 
 
