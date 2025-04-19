@@ -236,38 +236,49 @@ class BaseRobot(Agent):
 
 
     def _scout_step(self):
+        #solve teleportation bug
         zone_min, zone_max = {
             "z1": (0, self.model.width // 3 - 1),
             "z2": (self.model.width // 3, 2 * self.model.width // 3 - 1),
             "z3": (2 * self.model.width // 3, self.model.width - 1),
         }[self.allowed_zones()[-1]]
 
-        # start from current column (clamped to zone)
+        x, y = self.pos
+
+        # ── 0. walk horizontally until we are *inside* the zone ─────────
+        if x < zone_min:
+            self.model.grid.move_agent(self, (x + 1, y))
+            return
+        if x > zone_max:
+            self.model.grid.move_agent(self, (x - 1, y))
+            return
+
+        # ── 1. once inside, run the normal serpentine scan ─────────────
+        # first call: anchor the scan column
         if self.scout_col is None:
-            self.scout_col = min(max(self.pos[0], zone_min), zone_max)
+            self.scout_col = x
 
-        next_y = self.pos[1] + self.scout_dir
+        next_y = y + self.scout_dir
 
+        # turn at top / bottom edge and step horizontally
         if next_y < 0 or next_y >= self.model.height:
-            # reached top/bottom → flip vertical dir & step horizontally
             self.scout_dir *= -1
             self.scout_col += self.scout_hdir
 
-            # if we ran past a horizontal edge, bounce and change h‑dir
+            # bounce at horizontal edges of the zone
             if self.scout_col > zone_max:
                 self.scout_col = zone_max
                 self.scout_hdir = -1
-                self.scout_col += self.scout_hdir  # step back inside zone
             elif self.scout_col < zone_min:
                 self.scout_col = zone_min
                 self.scout_hdir = 1
-                self.scout_col += self.scout_hdir
 
-            next_y = self.pos[1] + self.scout_dir  # recompute after turn
+            next_y = y + self.scout_dir  # recompute after turn
 
         target = (self.scout_col, next_y)
         if not self.model.grid.out_of_bounds(target):
             self.model.grid.move_agent(self, target)
+
 
 
 class GreenRobotAgent(BaseRobot):
@@ -317,7 +328,7 @@ class GreenRobotAgent(BaseRobot):
             self.rendezvous_pos = m["pos"]       # update goal
 
         # --- in the seeker’s part, right after arriving -----------------
-        if self.pos == self.rendezvous_pos:      # nobody here?
+        if self.pos == self.rendezvous_pos:      # nobody here? i cant solve it better...
             others = [a for a in self.model.grid.get_cell_list_contents(self.pos)
                     if getattr(a,"unique_id",None)==self.partner_id]
             if not others:
@@ -496,7 +507,7 @@ class YellowRobotAgent(BaseRobot):
 
     def step(self):
         
-        # ── 0 a. WHERE / HERE handshake ─────────────────────────────────
+        # ── 0 a. WHERE / HERE handshake ───────────────────────────────── i cant solve it better...
         for m in self._inbox(lambda m: m.get("type") == "where"
                              and m["to"] == self.unique_id):
             self._send({"type": "here", "to": m["from"],
