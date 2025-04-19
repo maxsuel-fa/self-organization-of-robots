@@ -24,6 +24,7 @@ class RobotMission(Model):
         self.grid = MultiGrid(width, height, torus=False)
         self.seen_wastes: set[WasteAgent] = set()  
         self.running = True
+        self.status = "running"
 
         self.custom_agents = []
         # Initialize counters for performance metrics.
@@ -157,7 +158,6 @@ class RobotMission(Model):
         #print(f"[MODEL] Waste Count: {waste_count}")
         for agent in self.custom_agents:
             # Debug prints for dynamic agents.
-            from objects import WasteAgent, RadioactivityAgent, WasteDisposalAgent
             #if not isinstance(agent, (WasteAgent, RadioactivityAgent, WasteDisposalAgent)):
                 #print(f"[MODEL] Stepping agent {agent} at position {agent.pos}")
             agent.step()
@@ -170,14 +170,64 @@ class RobotMission(Model):
         #print("DataCollector contents after this step:")
         #print("DataCollector contents after this step:")
         #print(df)
+        # print a cool game over screen :)
+        counts = {"green": 0, "yellow": 0, "red": 0}
 
-        if self.finished:
-            self.running = False 
+        for a in self.custom_agents:
+            # waste that is still lying on the ground
+            wt = getattr(a, "waste_type", None)
+            if wt in counts:
+                counts[wt] += 1
+            # waste that a robot is currently carrying
+            if getattr(a, "carrying", None):
+                for w in a.carrying:
+                    counts[w] += 1
+        if all(v == 0 for v in counts.values()):
+            self.status = "win"
+            self.running = False
+        elif counts["green"] < 2 and counts["yellow"] < 2 and counts["red"] == 0:
+            self.status = "gameover"
+            self.running = False
+        else:
+            self.status = "running"
     
     @property
     def finished(self) -> bool:
-        """True when there are zero waste agents left on the grid."""
-        return all(
-            not hasattr(agent, "waste_type")
-            for agent in self.custom_agents
-        )
+        """
+        End the simulation when one of the following is true
+
+        1. SUCCESS  – every single bag has been disposed of:
+            • no WasteAgent left on the grid, and
+            • no robot is still carrying anything.
+
+        2. GAME OVER – it has become mathematically impossible to create a new
+        red bag, i.e.:
+            • fewer than two green bags in existence   AND
+            • fewer than two yellow bags in existence  AND
+            • zero red bags in existence.
+        (With those numbers no extra red can ever be produced, so the
+            remaining bags can never reach the disposal unit.)
+        """
+        # ―― count every bag that still exists anywhere ―────────────────────
+        counts = {"green": 0, "yellow": 0, "red": 0}
+
+        for a in self.custom_agents:
+            # waste that is still lying on the ground
+            wt = getattr(a, "waste_type", None)
+            if wt in counts:
+                counts[wt] += 1
+            # waste that a robot is currently carrying
+            if getattr(a, "carrying", None):
+                for w in a.carrying:
+                    counts[w] += 1
+
+        # 1. all gone  → success
+        if all(v == 0 for v in counts.values()):
+            return True
+
+        # 2. cannot ever reach a red bag again → game over
+        if counts["green"] < 2 and counts["yellow"] < 2 and counts["red"] == 0:
+            return True
+
+        # otherwise keep going
+        return False

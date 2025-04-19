@@ -217,6 +217,15 @@ def PerformanceGraph(model):
     fig.tight_layout()
     return solara.FigureMatplotlib(fig)
 
+@solara.component
+def GameStatus(model):
+    update_counter.get()                     # redraw each tick
+    if model.status == "running":
+        return solara.Markdown("")           # show nothing
+    if model.status == "win":
+        return solara.Markdown("## 🎉 **YOU WIN!**")
+    if model.status == "gameover":
+        return solara.Markdown("## 💀 **GAME OVER**")
 
 # Define interactive model parameters for the dashboard controls
 model_params = {
@@ -252,6 +261,17 @@ model_params = {
         "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
         "label": "height:"
     },
+    "heuristic": {                 # ★ change starts here
+        "type": "Select",          # ←  Dropdown  →  Choice
+        "value": "closest",
+        "values": [               # ←  options   →  choices
+            "closest",
+            "astar",
+            "random",
+            "min_total_distance",
+        ],
+        "label": "Path‑finding heuristic:",
+    }
 }
 
 
@@ -259,15 +279,24 @@ model_params = {
 # "astar", "closest", "random", "min_total_distance"
 
 # Instantiate the model with initial parameters
-initial_model = RobotMission(width=30, height=40, num_green=2, num_yellow=2, num_red=2,
-                             num_green_waste=2, num_yellow_waste=0, num_red_waste=0, heuristic="closest")
+initial_model = RobotMission(
+    width             = model_params["width"]["value"],
+    height            = model_params["height"]["value"],
+    num_green         = model_params["num_green"]["value"],
+    num_yellow        = model_params["num_yellow"]["value"],
+    num_red           = model_params["num_red"]["value"],
+    num_green_waste   = model_params["num_green_waste"]["value"],
+    num_yellow_waste  = model_params["num_yellow_waste"]["value"],
+    num_red_waste     = model_params["num_red_waste"]["value"],
+    heuristic         = model_params["heuristic"]["value"],
+)
 
 
 
 # Create the SolaraViz page with the custom grid component and interactive controls
 page = SolaraViz(
     initial_model,
-    components=[CustomGrid, PerformanceGraph],
+    components=[CustomGrid, PerformanceGraph, GameStatus],
     model_params=model_params,
     name="Robot Cleanup Mission Dashboard"
 )

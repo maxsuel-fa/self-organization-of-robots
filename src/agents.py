@@ -153,21 +153,22 @@ class BaseRobot(Agent):
         return new_position
 
     def pick_up_if_present(self, target_type):
-        """
-        Checks the current cell for a waste of the given target_type.
-        Only picks it up if that waste is assigned to this robot.
-        """
         cell_contents = self.model.grid.get_cell_list_contents([self.pos])
         for obj in cell_contents:
-            if hasattr(obj, "waste_type") and obj.waste_type == target_type:
-                if obj in self.assigned_wastes:
-                    #print(f"    {self.__class__.__name__} at {self.pos} picking up assigned {target_type} waste.")
-                    self.carrying.append(target_type)
-                    self.assigned_wastes.remove(obj)
-                    self.model.grid.remove_agent(obj)
-                    if obj in self.model.custom_agents:
-                        self.model.custom_agents.remove(obj)
-                    return True
+            if getattr(obj, "waste_type", None) == target_type and obj in self.assigned_wastes:
+
+                # add to backpack and clear the bookkeeping
+                self.carrying.append(target_type)
+                self.assigned_wastes.remove(obj)
+                self.model.seen_wastes.discard(obj)        # ← keep global list clean
+
+                # make sure no other robot will request it
+                with getattr(self.model, f"{target_type}_lock"):
+                    getattr(self.model, f"unassigned_{target_type}_wastes", set()).discard(obj)
+
+                self.model.grid.remove_agent(obj)
+                self.model.custom_agents.remove(obj)
+                return True
         return False
 
     def step(self):
@@ -234,46 +235,35 @@ class GreenRobotAgent(BaseRobot):
         return ['z1']
 
     def assign_wastes(self):
-        if self.assigned_wastes:
-            return
-        required = 2
-        with self.model.green_lock:
-            if len(self.model.unassigned_green_wastes) < required:
-                print("    [Green] Not enough unassigned green wastes available.")
-                return
-            
-            available = [
-                w for w in self.model.unassigned_green_wastes
-                if w in self.model.seen_wastes
-                and max(abs(w.pos[0]-self.pos[0]), abs(w.pos[1]-self.pos[1])) < 8
-            ]
+        # how many *more* green bags do I still need?
+        need = 2 - self.carrying.count("green") \
+                - sum(1 for w in self.assigned_wastes if w.waste_type == "green")
+        if need <= 0:
+            return                                        # nothing to look for
 
-            #available = list(self.model.unassigned_green_wastes)
+        with self.model.green_lock:
+            available = [w for w in self.model.unassigned_green_wastes
+                        if w in self.model.seen_wastes]
+
+            if not available:                             # none in sight
+                return
+
+            # --- keep the old ordering logic -------------
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
             elif self.heuristic == "random":
-                available = self.sort_randomly(available)
+                self.sort_randomly(available)
             elif self.heuristic == "min_total_distance":
-                target_point = ((self.model.width // 3) - 1, self.pos[1])
-                available = self.sort_by_min_total_distance(available, target_point)
+                tgt = ((self.model.width // 3) - 1, self.pos[1])
+                available = self.sort_by_min_total_distance(available, tgt)
             elif self.heuristic == "astar":
-                def astar_cost(waste):
-                    path = self.astar_path(self.pos, waste.pos)
-                    if not path:
-                        return float('inf')
-                    delivery_target = ((self.model.width // 3) - 1, waste.pos[1])
-                    delivery_dist = max(abs(waste.pos[0] - delivery_target[0]), abs(waste.pos[1] - delivery_target[1]))
-                    return len(path) + delivery_dist
+                def astar_cost(w): ...
                 available.sort(key=astar_cost)
+            # ---------------------------------------------
 
-            print(available)
-            if len(available) < required:
-                #print("    [Green] Not enough unassigned green wastes available.")
-                return
-            for waste in available[:required]:
+            for waste in available[:need]:                # take *exactly* what’s still missing
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_green_wastes.remove(waste)
-        #print(f"    [Green] Assigned green wastes: {self.assigned_wastes}")
 
     def step(self):
         
