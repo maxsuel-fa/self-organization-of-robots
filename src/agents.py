@@ -32,10 +32,21 @@ class BaseRobot(Agent):
         self.scout_hdir = 1
         self.scout_col  = None
 
+        #blindofold
+        self.vision_radius  = 4 
+
         # tiny logger
         self.log = (lambda *msg, **k: print(f"[{self.unique_id}]", *msg, **k)
                     if BaseRobot.DEBUG else (lambda *a, **k: None))
 
+
+    #not cheating heuristics
+    def sort_by_farthest(self, available):
+        """Return the same list, farthest‑first."""
+        return sorted(
+            available,
+            key=lambda w: -max(abs(w.pos[0] - self.pos[0]), abs(w.pos[1] - self.pos[1]))
+        )
     #little communication betwen robots
     def _send(self, msg: dict) -> None:
         msg["step"] = self.model.step_count
@@ -211,9 +222,9 @@ class BaseRobot(Agent):
             if new_pos != self.pos:
                 self.model.grid.move_agent(self, new_pos)
     
-    def _update_seen_wastes(self, radius=8):
+    def _update_seen_wastes(self):
         #Add wastes within < radius cells to model.seen_wastes.
-        r = radius
+        r = self.vision_radius
         for dx in range(-r, r + 1):
             for dy in range(-r, r + 1):
                 x, y = self.pos[0] + dx, self.pos[1] + dy
@@ -284,20 +295,15 @@ class GreenRobotAgent(BaseRobot):
             if not available:                             # none in sight
                 return
 
-            # --- keep the old ordering logic -------------
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
-            elif self.heuristic == "random":
-                self.sort_randomly(available)
+            elif self.heuristic == "farthest":
+                available = self.sort_by_farthest(available)
             elif self.heuristic == "min_total_distance":
-                tgt = ((self.model.width // 3) - 1, self.pos[1])
+                tgt = ((self.model.width // 3) - 1, self.pos[1])      
                 available = self.sort_by_min_total_distance(available, tgt)
-            elif self.heuristic == "astar":
-                def astar_cost(w): ...
-                available.sort(key=astar_cost)
-            # ---------------------------------------------
 
-            for waste in available[:need]:                # take *exactly* what’s still missing
+            for waste in available[:need]:            
                 self.assigned_wastes.add(waste)
                 self.model.unassigned_green_wastes.remove(waste)
                 
@@ -451,113 +457,166 @@ class GreenRobotAgent(BaseRobot):
         return
 
 class YellowRobotAgent(BaseRobot):
+    def __init__(self, model, heuristic="closest"):
+        super().__init__(model, heuristic)
+
+        # hand‑off protocol state
+        self.partner_id      = None       # accepted partner’s UID
+        self.waiting_partner = False      # True while I stand still
+        self.rendezvous_pos  = None       # fixed meeting point
+        self.offer_active    = False      # True after broadcasting OFFER
+        self.locked_for_help = False      # freeze after first OFFER/ACCEPT
+
     def allowed_zones(self):
         return ['z1', 'z2']
 
     def assign_wastes(self):
-        # how many additional yellow bags do I still need?
         need = 2 - self.carrying.count("yellow") \
                 - sum(1 for w in self.assigned_wastes if w.waste_type == "yellow")
         if need <= 0:
-            return                                     # already have enough
+            return
 
         with self.model.yellow_lock:
             available = [w for w in self.model.unassigned_yellow_wastes
-                        if w in self.model.seen_wastes]
-
+                         if w in self.model.seen_wastes]
             if not available:
-                return                                 # nothing visible yet
+                return
 
-            # ── keep the previous sorting logic ────────────────────────────
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
-            elif self.heuristic == "random":
-                self.sort_randomly(available)
+            elif self.heuristic == "farthest":
+                available = self.sort_by_farthest(available)
             elif self.heuristic == "min_total_distance":
-                tgt = ((self.model.width // 3) - 1, self.pos[1])
+                tgt = ((2 * self.model.width // 3) - 1, self.pos[1])     
                 available = self.sort_by_min_total_distance(available, tgt)
-            elif self.heuristic == "astar":
-                def astar_cost(waste):
-                    path = self.astar_path(self.pos, waste.pos)
-                    if not path:
-                        return float("inf")
-                    delivery_x = (2 * self.model.width // 3) - 1
-                    delivery_dist = max(abs(waste.pos[0] - delivery_x),
-                                        abs(waste.pos[1] - self.pos[1]))
-                    return len(path) + delivery_dist
-                available.sort(key=astar_cost)
-            # ───────────────────────────────────────────────────────────────
 
-            for waste in available[:need]:             # take exactly what’s missing
-                self.assigned_wastes.add(waste)
-                self.model.unassigned_yellow_wastes.remove(waste)
-            
-        #print(f"    [Yellow] Assigned yellow wastes: {self.assigned_wastes}")
+            for w in available[:need]:
+                self.assigned_wastes.add(w)
+                self.model.unassigned_yellow_wastes.remove(w)
 
     def step(self):
+        
+        # ── 0 a. WHERE / HERE handshake ─────────────────────────────────
+        for m in self._inbox(lambda m: m.get("type") == "where"
+                             and m["to"] == self.unique_id):
+            self._send({"type": "here", "to": m["from"],
+                        "from": self.unique_id, "pos": self.pos})
 
-        # 0. Perception
+        for m in self._inbox(lambda m: m.get("type") == "here"
+                             and m["to"] == self.unique_id):
+            self.rendezvous_pos = m["pos"]
+
+        if self.partner_id and self.pos == self.rendezvous_pos:
+            others = [a for a in self.model.grid.get_cell_list_contents(self.pos)
+                      if getattr(a, "unique_id", None) == self.partner_id]
+            if not others:
+                self._send({"type": "where", "to": self.partner_id,
+                            "from": self.unique_id})
+
+        # ── 0 b. PICK UP incoming TRANSFERs ─────────────────────────────
+        for msg in self._inbox(lambda m: m.get("type") == "transfer"
+                               and m["to"] == self.unique_id):
+            self.carrying.extend(msg["items"])
+
+        # regular perception
         self._update_seen_wastes()
 
-        # 1. Transform as soon as we hold 2 yellow
+        # ── 1. turn 2 yellow → 1 red immediately ────────────────────────
         if self.carrying.count("yellow") == 2:
-            for _ in range(2):
-                self.carrying.remove("yellow")
-            self.carrying.append("red")
+            self.carrying = ["red"]
+            # reset handshake state
+            self.partner_id = self.rendezvous_pos = None
+            self.offer_active = self.waiting_partner = False
+            self.locked_for_help = False
 
-        # 2. Deliver red if have one
+        # ── 2. deliver red, if we have one ───────────────────────────────
         if "red" in self.carrying:
             delivery_x = (2 * self.model.width // 3) - 1
-            delivery_target = (delivery_x, self.pos[1])
+            target = (delivery_x, self.pos[1])
             if self.pos[0] < delivery_x:
                 if self.heuristic == "astar":
-                    path = self.astar_path(self.pos, delivery_target)
-                    new_pos = self.follow_path(path)
+                    self.follow_path(self.astar_path(self.pos, target))
                 else:
-                    new_pos = self.move_towards(delivery_target)
-                    if new_pos != self.pos:
-                        self.model.grid.move_agent(self, new_pos)
-                #if new_pos != self.pos:
-                #    print(f"    [Yellow] Transporting red waste to {new_pos}")
-                #else:
-                #    print(f"    [Yellow] Blocked en route to drop red at {self.pos}")
+                    self.model.grid.move_agent(self, self.move_towards(target))
             else:
-                #print(f"    [Yellow] At eastern boundary of allowed zones, dropping red waste at {self.pos}.")
+                # drop the red bag
                 self.carrying.remove("red")
                 from objects import WasteAgent
-                new_waste = WasteAgent(self.model, 'red', self.pos)
+                new_waste = WasteAgent(self.model, "red", self.pos)
                 self.model.grid.place_agent(new_waste, self.pos)
                 self.model.custom_agents.append(new_waste)
                 with self.model.red_lock:
                     self.model.unassigned_red_wastes.add(new_waste)
+            return  # done for this tick
+
+        # ── 3. listen for OFFERS if we hold exactly one yellow ──────────
+        if self.carrying == ["yellow"] and not self.partner_id and not self.offer_active:
+            offers = self._inbox(lambda m: m["type"] == "offer"
+                                 and m["from"] != self.unique_id
+                                 and m["waste_type"] == "yellow")
+            if offers:
+                chosen = offers[0]
+                self.partner_id     = chosen["from"]
+                self.rendezvous_pos = chosen["pos"]
+                self._send({"type": "accept", "to": self.partner_id,
+                            "from": self.unique_id})
+
+        # ── 4. check for ACCEPT if *we* sent an offer ───────────────────
+        if self.offer_active and not self.waiting_partner:
+            acc = self._inbox(lambda m: m["type"] == "accept"
+                              and m["to"] == self.unique_id)
+            if acc:
+                self.partner_id      = acc[0]["from"]
+                self.waiting_partner = True  # freeze and wait
+
+        # ── 5. broadcast OFFER after picking first yellow ───────────────
+        if self.carrying == ["yellow"]:
+            if self.offer_active or self.partner_id:
+                self.locked_for_help = True
+            else:
+                visible = [w for w in self.model.unassigned_yellow_wastes
+                           if w in self.model.seen_wastes]
+                self.locked_for_help = not visible
+
+            if self.locked_for_help and not self.offer_active and not self.partner_id:
+                self.rendezvous_pos = self.pos
+                self._send({"type": "offer", "from": self.unique_id,
+                            "pos": self.rendezvous_pos, "waste_type": "yellow"})
+                self.offer_active = True
+                return  # stand still this tick
+
+        # ── 6. WAITING FOR PARTNER – stationary, watch for collision ────
+        if self.waiting_partner:
+            for a in self.model.grid.get_cell_list_contents(self.pos):
+                if getattr(a, "unique_id", None) == self.partner_id:
+                    self._send({"type": "transfer",
+                                "from": self.unique_id,
+                                "to": self.partner_id,
+                                "items": self.carrying.copy()})
+                    self.carrying.clear()
+                    self.waiting_partner = self.offer_active = False
+                    self.partner_id = self.rendezvous_pos = None
+            return  # stay put otherwise
+
+        # ── 7. SEEKER on its way to rendez‑vous ────────────────────────
+        if self.partner_id and self.rendezvous_pos and self.locked_for_help:
+            self.model.grid.move_agent(self, self.move_towards(self.rendezvous_pos))
             return
 
-        # 3. Assign wastes
+        # ── 8. normal hunt / scout behaviour ───────────────────────────
         self.assign_wastes()
 
-        # 4. Hunt for new yellow wastes or scout    
         if self.carrying.count("yellow") < 2:
             assigned = self.get_closest_assigned_waste("yellow")
             if assigned:
-                target = assigned.pos
+                tgt = assigned.pos
                 if self.heuristic == "astar":
-                    path = self.astar_path(self.pos, target)
-                    new_pos = self.follow_path(path)
+                    self.follow_path(self.astar_path(self.pos, tgt))
                 else:
-                    new_pos = self.move_towards(target)
-                    if new_pos != self.pos:
-                        self.model.grid.move_agent(self, new_pos)
-                #print(f"    [Yellow] Moving towards assigned yellow waste at {target}, new position {new_pos}")
+                    self.model.grid.move_agent(self, self.move_towards(tgt))
                 self.pick_up_if_present("yellow")
             else:
                 self._scout_step()
-
-        if self.carrying.count("yellow") == 2:
-            #print(f"    [Yellow] Transforming 2 yellow wastes into 1 red waste at {self.pos}")
-            for _ in range(2):
-                self.carrying.remove("yellow")
-            self.carrying.append("red")
-        return
 
 class RedRobotAgent(BaseRobot):
     def allowed_zones(self):
@@ -577,25 +636,13 @@ class RedRobotAgent(BaseRobot):
             if not available:
                 return
 
-            # ── original ordering logic ────────────────────────────────────
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
-            elif self.heuristic == "random":
-                self.sort_randomly(available)
+            elif self.heuristic == "farthest":
+                available = self.sort_by_farthest(available)
             elif self.heuristic == "min_total_distance":
-                tgt = self.model.waste_disposal.pos
+                tgt = self.model.waste_disposal.pos   
                 available = self.sort_by_min_total_distance(available, tgt)
-            elif self.heuristic == "astar":
-                def astar_cost(waste):
-                    path = self.astar_path(self.pos, waste.pos)
-                    if not path:
-                        return float("inf")
-                    disp = self.model.waste_disposal.pos
-                    disp_dist = max(abs(waste.pos[0] - disp[0]),
-                                    abs(waste.pos[1] - disp[1]))
-                    return len(path) + disp_dist
-                available.sort(key=astar_cost)
-            # ───────────────────────────────────────────────────────────────
 
             # for red robots we only ever need one bag
             picked = available[0]

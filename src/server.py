@@ -261,17 +261,16 @@ model_params = {
         "type": "SliderInt", "value": 30, "min": 0, "max": 100, "step": 1,
         "label": "height:"
     },
-    "heuristic": {                 # ★ change starts here
-        "type": "Select",          # ←  Dropdown  →  Choice
+    "heuristic": {
+        "type": "Select",
         "value": "closest",
-        "values": [               # ←  options   →  choices
+        "values": [
             "closest",
-            "astar",
-            "random",
+            "farthest",
             "min_total_distance",
         ],
         "label": "Path‑finding heuristic:",
-    }
+},
 }
 
 
