@@ -1,5 +1,12 @@
 # Self‑Organization of Robots – README
 Interactive and batch simulation of multi‑robot waste collection in three radioactive zones.
+# WARNING
+> 🚀 **Looking for enhanced agent coordination and realistic perception?**  
+> 👉 **Check out the `limited_perception` branch** for a more advanced version with:
+> - ✅ Local vision (no global map)
+> - 🧠 Smarter coordination through environmental messaging
+> - 📡 Communication system improvements
+> 🔗 Switch to branch: [`limited_perception`]((https://github.com/maxsuel-fa/self-organization-of-robots/tree/limited_perception))
 
 ---
 ## Table of Contents
