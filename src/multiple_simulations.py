@@ -6,8 +6,10 @@ Compatible with the April 2025 code (closest / farthest / min_total_distance).
 
 import csv
 import os
+import time
 from datetime import datetime
 from statistics import mean
+import concurrent.futures
 
 from model import RobotMission
 
@@ -21,8 +23,9 @@ HEURISTICS      = ["closest",
 ROBOT_SCENARIOS = [1, 2, 4]      # same count for green, yellow, red
 WASTE_LEVELS    = [4, 8, 16]     # same count for green, yellow, red
 
-NUM_RUNS        = 100
-MAX_STEPS       = 10000
+NUM_RUNS        = 50
+MAX_STEPS       = 2000
+STEP_TIMEOUT    = 3.0   # seconds allowed per model.step() call
 
 # --------------------------------------------------------------------- #
 # Output – folder + CSV
@@ -54,7 +57,7 @@ def run_batch(heuristic: str, robots: int, waste: int):
     step_runs, dist_runs, deli_runs = [], [], []
     wins = 0; gameovers = 0
 
-    for _ in range(NUM_RUNS):
+    for run_idx in range(NUM_RUNS):
         model = RobotMission(
             width=30, height=30,
             num_green=robots, num_yellow=robots, num_red=robots,
@@ -64,11 +67,24 @@ def run_batch(heuristic: str, robots: int, waste: int):
             heuristic=heuristic,
         )
 
-        while not model.finished and model.step_count < MAX_STEPS:
-            model.step()
+        # run each step with a timeout to avoid hanging
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            while not model.finished and model.step_count < MAX_STEPS:
+                future = executor.submit(model.step)
+                try:
+                    future.result(timeout=STEP_TIMEOUT)
+                except concurrent.futures.TimeoutError:
+                    print(f"[Run {run_idx}] Timeout at step {model.step_count}, marking gameover")
+                    model.status = "gameover"
+                    break
+                except Exception as e:
+                    print(f"[Run {run_idx}] Error during simulation: {e}, marking gameover")
+                    model.status = "gameover"
+                    break
 
         # ignore unfinished runs (should be rare now)
         if model.step_count >= MAX_STEPS and model.status == "running":
+            gameovers += 1
             continue
 
         step_runs.append(model.step_count)
@@ -82,7 +98,8 @@ def run_batch(heuristic: str, robots: int, waste: int):
 
         if model.status == "win":
             wins += 1
-        elif model.status == "gameover":
+        else:
+            # treat timeouts and exceptions as gameover
             gameovers += 1
 
     n = len(step_runs) or 1   # guard against division by zero

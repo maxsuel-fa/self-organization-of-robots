@@ -7,11 +7,12 @@ Authors: Mateus Goto, Maxsuel Fernandes, João Pedro Regazzi
 """
 
 from mesa import Agent
+from uuid import uuid4
 from objects import wallAgent
 import heapq
 
 class BaseRobot(Agent):
-    DEBUG = True                        # ← flip to False to mute all logs
+    DEBUG = False                        # ← flip to False to mute all logs
     _uid_counter = 0                      # own id generator
 
     def __init__(self, model, heuristic="closest"):
@@ -21,6 +22,7 @@ class BaseRobot(Agent):
         self.unique_id = BaseRobot._uid_counter
         BaseRobot._uid_counter += 1
         self.locked_for_help   = False
+        self.handshake_id      = None
         # common state ---------------------------------------------------
         self.heuristic         = heuristic
         self.carrying          = []
@@ -52,7 +54,9 @@ class BaseRobot(Agent):
         msg["step"] = self.model.step_count
         with self.model.message_lock:
             self.model.message_board.append(msg)
-        self.log("SEND", msg)              
+        self.log("SEND", msg)
+        """ print("carrying :", self.carrying)
+        print("assigned : ", self.assigned_wastes, "len:", len(self.assigned_wastes))  """              
 
     def _inbox(self, predicate):
         with self.model.message_lock:
@@ -62,6 +66,8 @@ class BaseRobot(Agent):
             self.model.message_board = keep
         if target:                         
             self.log("RECV", target)
+            """ print("carrying :", self.carrying)
+            print("assigned : ", self.assigned_wastes, "len:", len(self.assigned_wastes))  """
         return target
     
     def sort_by_closest(self, available):
@@ -248,9 +254,11 @@ class BaseRobot(Agent):
         # ── 0. walk horizontally until we are *inside* the zone ─────────
         if x < zone_min:
             self.model.grid.move_agent(self, (x + 1, y))
+            self.distance_traveled += 1
             return
         if x > zone_max:
             self.model.grid.move_agent(self, (x - 1, y))
+            self.distance_traveled += 1
             return
 
         # ── 1. once inside, run the normal serpentine scan ─────────────
@@ -278,212 +286,190 @@ class BaseRobot(Agent):
         target = (self.scout_col, next_y)
         if not self.model.grid.out_of_bounds(target):
             self.model.grid.move_agent(self, target)
+            self.distance_traveled += 1
 
 
 
 class GreenRobotAgent(BaseRobot):
     def __init__(self, model, heuristic="closest"):
         super().__init__(model, heuristic)
-        # hand‑off protocol --------------------------------------------------
-        self.partner_id      = None
-        self.waiting_partner = False
-        self.rendezvous_pos  = None
-        self.offer_active    = False
+        # hand‑off protocol state
+        self.partner_id       = None
+        self.offer_active     = False
+        self.rendezvous_pos   = None
+
     def allowed_zones(self):
         return ['z1']
 
+    def _compute_midpoint(self, other_pos):
+        mx = (self.pos[0] + other_pos[0]) // 2
+        my = (self.pos[1] + other_pos[1]) // 2
+        self.rendezvous_pos = (mx, my)
+
+    def _reset_handshake(self):
+        self.partner_id     = None
+        self.offer_active   = False
+        self.rendezvous_pos = None
+
     def assign_wastes(self):
-        # how many *more* green bags do I still need?
         need = 2 - self.carrying.count("green") \
-                - sum(1 for w in self.assigned_wastes if w.waste_type == "green")
+                 - sum(1 for w in self.assigned_wastes if w.waste_type == "green")
         if need <= 0:
-            return                                        # nothing to look for
+            return
 
         with self.model.green_lock:
             available = [w for w in self.model.unassigned_green_wastes
-                        if w in self.model.seen_wastes]
-
-            if not available:                             # none in sight
+                         if w in self.model.seen_wastes]
+            if not available:
                 return
-
             if self.heuristic == "closest":
                 available = self.sort_by_closest(available)
             elif self.heuristic == "farthest":
                 available = self.sort_by_farthest(available)
             elif self.heuristic == "min_total_distance":
-                tgt = ((self.model.width // 3) - 1, self.pos[1])      
+                tgt = ((self.model.width // 3) - 1, self.pos[1])
                 available = self.sort_by_min_total_distance(available, tgt)
 
-            for waste in available[:need]:            
-                self.assigned_wastes.add(waste)
-                self.model.unassigned_green_wastes.remove(waste)
-                
+            for w in available[:need]:
+                self.assigned_wastes.add(w)
+                self.model.unassigned_green_wastes.remove(w)
+
     def step(self):
-        for m in self._inbox(lambda m: m.get("type")=="where" and m["to"]==self.unique_id):
-            self._send({"type":"here", "to":m["from"], "from":self.unique_id,
-                        "pos": self.pos})
-
-        # 0 b. process a HERE answer
-        for m in self._inbox(lambda m: m.get("type")=="here" and m["to"]==self.unique_id):
-            self.rendezvous_pos = m["pos"]       # update goal
-
-        # --- in the seeker’s part, right after arriving -----------------
-        if self.partner_id and self.pos == self.rendezvous_pos:      # nobody here? i cant solve it better...
-            others = [a for a in self.model.grid.get_cell_list_contents(self.pos)
-                    if getattr(a,"unique_id",None)==self.partner_id]
-            if not others:
-                self._send({"type":"where", "to":self.partner_id, "from":self.unique_id})
-        # ── 0.  pick up incoming TRANSFERs ───────────────────────────────
-        for msg in self._inbox(lambda m: m.get("type") == "transfer"
-                               and m["to"] == self.unique_id):
-            self.carrying.extend(msg["items"])
-
-        # ── regular perception etc. ──────────────────────────────────────
+        # ── perception ───────────────────────────────────────
         self._update_seen_wastes()
 
-        # ── 1.  already have two greens?  transform immediately ─────────
+        # ── 1. combine greens → yellow ───────────────────────
         if self.carrying.count("green") == 2:
             self.carrying = ["yellow"]
-            self.offer_active = self.waiting_partner = False
-            self.partner_id = self.rendezvous_pos = None
-
-        # 2. Deliver yellow if have one
-        if "yellow" in self.carrying:
-            delivery_x = (self.model.width // 3) - 1
-            delivery_target = (delivery_x, self.pos[1])
-            if self.pos[0] < delivery_x:
-                if self.heuristic == "astar":
-                    path = self.astar_path(self.pos, delivery_target)
-                    new_pos = self.follow_path(path)
-                else:
-                    new_pos = self.move_towards(delivery_target)
-                    if new_pos != self.pos:
-                        self.model.grid.move_agent(self, new_pos)
-                        self.distance_traveled += 1
-                #if new_pos != self.pos:
-                    #print(f"    [Green] Transporting yellow waste east to {new_pos}")
-                #else:
-                    #print(f"    [Green] Blocked en route to drop yellow at {self.pos}")
-            else:
-                #print(f"    [Green] At eastern boundary of z1, dropping yellow waste at {self.pos}.")
-                self.carrying.remove("yellow")
-                from objects import WasteAgent
-                new_waste = WasteAgent(self.model, 'yellow', self.pos)
-                self.model.grid.place_agent(new_waste, self.pos)
-                self.model.custom_agents.append(new_waste)
-                with self.model.yellow_lock:
-                    self.model.unassigned_yellow_wastes.add(new_waste)
+            self._reset_handshake()
             return
 
-          # ── 3.  RADIO: listen for offers if I carry ONE green ───────────
-        if self.carrying == ["green"] and not self.partner_id and not self.offer_active:
-            offers = self._inbox(lambda m: m["type"] == "offer"
-                                 and m["from"] != self.unique_id
-                                 and m["waste_type"] == "green")
-            if offers:
-                chosen = offers[0]
-                self.partner_id     = chosen["from"]
-                self.rendezvous_pos = chosen["pos"]    # fixed rendez‑vous
-                self._send({"type": "accept", "to": self.partner_id,
-                            "from": self.unique_id})
-        
-        # ── 4.  check for ACCEPT if *I* issued an offer ─────────────────
-        if self.offer_active and not self.waiting_partner:
-            acc = self._inbox(lambda m: m["type"] == "accept"
-                              and m["to"] == self.unique_id)
-            if acc:
-                self.partner_id     = acc[0]["from"]
-                self.waiting_partner = True   # stand still and wait
-
-        # ── 5.  broadcast an offer the moment I get the first green ─────
-        if self.carrying == ["green"]:
-            # once an offer/accept pair exists we freeze until transfer
-            if self.offer_active or self.partner_id:
-                self.locked_for_help = True
+        # ── 2. deliver yellow → drop + spawn new waste ───────
+        if "yellow" in self.carrying:
+            delivery_x = (self.model.width // 3) - 1
+            if self.pos[0] < delivery_x:
+                self.model.grid.move_agent(self, self.move_towards((delivery_x, self.pos[1])))
             else:
-                visible = [w for w in self.model.unassigned_green_wastes
-                           if w in self.model.seen_wastes]
-                self.locked_for_help = not visible
+                # drop and enqueue
+                self.carrying.remove("yellow")
+                from objects import WasteAgent
+                new_w = WasteAgent(self.model, 'yellow', self.pos)
+                self.model.grid.place_agent(new_w, self.pos)
+                self.model.custom_agents.append(new_w)
+                with self.model.yellow_lock:
+                    self.model.unassigned_yellow_wastes.add(new_w)
+                self._reset_handshake()
+            return
 
-            if self.locked_for_help and not self.offer_active and not self.partner_id:
-                # fix rendezvous point & broadcast
-                self.rendezvous_pos = self.pos
+        # ── 3. incoming transfer? ────────────────────────────
+        for msg in self._inbox(lambda m: m.get("type")=="transfer"
+                               and m["to"]==self.unique_id):
+            self.carrying.extend(msg["items"])
+            self._reset_handshake()
+            return
+
+        # ── 4. accept incoming offer ─────────────────────────
+        if self.carrying==["green"] and not self.offer_active and not self.partner_id:
+            offers = self._inbox(lambda m: m.get("type")=="offer"
+                                 and m.get("waste_type")=="green")
+            if offers:
+                o = offers[0]
+                self.partner_id = o["from"]
+                # reply with ACCEPT + our pos
+                self._send({
+                    "type": "accept",
+                    "from": self.unique_id,
+                    "to":   self.partner_id,
+                    "pos":  self.pos
+                })
+                # compute midpoint and lock
+                self._compute_midpoint(o["pos"])
+                self.offer_active = True
+                return
+
+        # ── 5. handle accept of my offer ─────────────────────
+        if self.offer_active and not self.partner_id:
+            acc = self._inbox(lambda m: m.get("type")=="accept"
+                              and m.get("to")==self.unique_id)
+            if acc:
+                a = acc[0]
+                self.partner_id = a["from"]
+                self._compute_midpoint(a["pos"])
+                return
+            # timeout un­answered offer → reset
+            self._reset_handshake()
+
+        # ── 6. broadcast offer if holding one green ──────────
+        if self.carrying==["green"] and not self.offer_active and not self.partner_id:
+            # only if no other seen wastes to pick
+            visible = [w for w in self.model.unassigned_green_wastes
+                       if w in self.model.seen_wastes]
+            if not visible and len(self.assigned_wastes) == 0:
+                self.offer_active = True
                 self._send({
                     "type":       "offer",
                     "from":       self.unique_id,
-                    "pos":        self.rendezvous_pos,
-                    "waste_type": "green"
+                    "waste_type": "green",
+                    "pos":        self.pos
                 })
-                self.offer_active = True
-                # stay put until partner arrives
                 return
 
-        # ── 6.  if waiting, do nothing but watch for partner collision ──
-        if self.waiting_partner:
-            # same‑cell collision?
-            for a in self.model.grid.get_cell_list_contents(self.pos):
-                if getattr(a, "unique_id", None) == self.partner_id:
-                    self._send({"type": "transfer",
-                                "from": self.unique_id,
-                                "to"  : self.partner_id,
-                                "items": self.carrying.copy()})
-                    self.carrying.clear()
-                    self.partner_id = self.rendezvous_pos = None
-                    self.waiting_partner = self.offer_active = False
-            return                      # stay put otherwise
-
-        # ── 7.  heading to partner?  move there ────────────────────────
-        if self.partner_id and self.rendezvous_pos and self.locked_for_help:
-            self.model.grid.move_agent(self, self.move_towards(self.rendezvous_pos))
+        # ── 7. move to rendezvous + transfer ───────────────────
+        if self.offer_active and self.partner_id and self.rendezvous_pos:
+            if self.pos != self.rendezvous_pos:
+                self.model.grid.move_agent(self, self.move_towards(self.rendezvous_pos))
+            else:
+                # transfer and clear
+                self._send({
+                    "type":  "transfer",
+                    "from":  self.unique_id,
+                    "to":    self.partner_id,
+                    "items": self.carrying.copy()
+                })
+                self.carrying.clear()
+                self._reset_handshake()
             return
 
-        # ── 8.  normal hunt / scout logic (unchanged) ──────────────────
+        # ── 8. normal hunt / scout ───────────────────────────
         self.assign_wastes()
-
-        # 4. Hunt assigned greens or scout
-        if self.carrying.count("green") < 2:
-            assigned = self.get_closest_assigned_waste("green")
-            if assigned:
-                target = assigned.pos
-                if self.heuristic == "astar":
-                    path = self.astar_path(self.pos, target)
-                    new_pos = self.follow_path(path)
+        n = self.carrying.count("green")
+        if n < 2:
+            tgt = self.get_closest_assigned_waste("green")
+            if tgt:
+                if self.heuristic=="astar":
+                    self.follow_path(self.astar_path(self.pos, tgt.pos))
                 else:
-                    new_pos = self.move_towards(target)
-                    if new_pos != self.pos:
-                        self.model.grid.move_agent(self, new_pos)
-                        self.distance_traveled += 1
-                #print(f"    [Green] Moving towards assigned green waste at {target}, new position {new_pos}")
+                    self.model.grid.move_agent(self, self.move_towards(tgt.pos))
+                self.pick_up_if_present("green")
             else:
-                self._scout_step()
-                #print("    [Green] No assigned green waste found.")
-
-            self.pick_up_if_present("green")
-
-            if self.carrying.count("green") == 2:
-                #print(f"    [Green] Transforming 2 green wastes into 1 yellow waste at {self.pos}")
-                for _ in range(2):
-                    self.carrying.remove("green")
-                self.carrying.append("yellow")
+                if n==0:
+                    self._scout_step()
         return
 
 class YellowRobotAgent(BaseRobot):
     def __init__(self, model, heuristic="closest"):
         super().__init__(model, heuristic)
-
         # hand‑off protocol state
-        self.partner_id      = None       # accepted partner’s UID
-        self.waiting_partner = False      # True while I stand still
-        self.rendezvous_pos  = None       # fixed meeting point
-        self.offer_active    = False      # True after broadcasting OFFER
-        self.locked_for_help = False      # freeze after first OFFER/ACCEPT
+        self.partner_id      = None
+        self.offer_active    = False
+        self.rendezvous_pos  = None
 
     def allowed_zones(self):
         return ['z1', 'z2']
 
+    def _compute_midpoint(self, other_pos):
+        mx = (self.pos[0] + other_pos[0]) // 2
+        my = (self.pos[1] + other_pos[1]) // 2
+        self.rendezvous_pos = (mx, my)
+
+    def _reset_handshake(self):
+        self.partner_id     = None
+        self.offer_active   = False
+        self.rendezvous_pos = None
+
     def assign_wastes(self):
         need = 2 - self.carrying.count("yellow") \
-                - sum(1 for w in self.assigned_wastes if w.waste_type == "yellow")
+               - sum(1 for w in self.assigned_wastes if w.waste_type == "yellow")
         if need <= 0:
             return
 
@@ -498,7 +484,7 @@ class YellowRobotAgent(BaseRobot):
             elif self.heuristic == "farthest":
                 available = self.sort_by_farthest(available)
             elif self.heuristic == "min_total_distance":
-                tgt = ((2 * self.model.width // 3) - 1, self.pos[1])     
+                tgt = ((2 * self.model.width // 3) - 1, self.pos[1])
                 available = self.sort_by_min_total_distance(available, tgt)
 
             for w in available[:need]:
@@ -506,128 +492,119 @@ class YellowRobotAgent(BaseRobot):
                 self.model.unassigned_yellow_wastes.remove(w)
 
     def step(self):
-        
-        # ── 0 a. WHERE / HERE handshake ───────────────────────────────── i cant solve it better...
-        for m in self._inbox(lambda m: m.get("type") == "where"
-                             and m["to"] == self.unique_id):
-            self._send({"type": "here", "to": m["from"],
-                        "from": self.unique_id, "pos": self.pos})
+        # ── perception ───────────────────────────────────────
+        self._update_seen_wastes()
 
-        for m in self._inbox(lambda m: m.get("type") == "here"
-                             and m["to"] == self.unique_id):
-            self.rendezvous_pos = m["pos"]
+        # ── 1. combine yellows → red ─────────────────────────
+        if self.carrying.count("yellow") == 2:
+            self.carrying = ["red"]
+            self._reset_handshake()
+            return
 
-        if self.partner_id and self.pos == self.rendezvous_pos:
-            others = [a for a in self.model.grid.get_cell_list_contents(self.pos)
-                      if getattr(a, "unique_id", None) == self.partner_id]
-            if not others:
-                self._send({"type": "where", "to": self.partner_id,
-                            "from": self.unique_id})
+        # ── 2. deliver red → drop + enqueue new red waste ────
+        if "red" in self.carrying:
+            delivery_x = (2 * self.model.width // 3) - 1
+            if self.pos[0] < delivery_x:
+                if self.heuristic == "astar":
+                    self.follow_path(self.astar_path(self.pos, (delivery_x, self.pos[1])))
+                else:
+                    self.model.grid.move_agent(self, self.move_towards((delivery_x, self.pos[1])))
+            else:
+                # drop and re‑add as red waste
+                self.carrying.remove("red")
+                from objects import WasteAgent
+                new_w = WasteAgent(self.model, 'red', self.pos)
+                self.model.grid.place_agent(new_w, self.pos)
+                self.model.custom_agents.append(new_w)
+                with self.model.red_lock:
+                    self.model.unassigned_red_wastes.add(new_w)
+                self._reset_handshake()
+            return
 
-        # ── 0 b. PICK UP incoming TRANSFERs ─────────────────────────────
+        # ── 3. incoming transfer? ────────────────────────────
         for msg in self._inbox(lambda m: m.get("type") == "transfer"
                                and m["to"] == self.unique_id):
             self.carrying.extend(msg["items"])
-
-        # regular perception
-        self._update_seen_wastes()
-
-        # ── 1. turn 2 yellow → 1 red immediately ────────────────────────
-        if self.carrying.count("yellow") == 2:
-            self.carrying = ["red"]
-            # reset handshake state
-            self.partner_id = self.rendezvous_pos = None
-            self.offer_active = self.waiting_partner = False
-            self.locked_for_help = False
-
-        # ── 2. deliver red, if we have one ───────────────────────────────
-        if "red" in self.carrying:
-            delivery_x = (2 * self.model.width // 3) - 1
-            target = (delivery_x, self.pos[1])
-            if self.pos[0] < delivery_x:
-                if self.heuristic == "astar":
-                    self.follow_path(self.astar_path(self.pos, target))
-                else:
-                    self.model.grid.move_agent(self, self.move_towards(target))
-            else:
-                # drop the red bag
-                self.carrying.remove("red")
-                from objects import WasteAgent
-                new_waste = WasteAgent(self.model, "red", self.pos)
-                self.model.grid.place_agent(new_waste, self.pos)
-                self.model.custom_agents.append(new_waste)
-                with self.model.red_lock:
-                    self.model.unassigned_red_wastes.add(new_waste)
-            return  # done for this tick
-
-        # ── 3. listen for OFFERS if we hold exactly one yellow ──────────
-        if self.carrying == ["yellow"] and not self.partner_id and not self.offer_active:
-            offers = self._inbox(lambda m: m["type"] == "offer"
-                                 and m["from"] != self.unique_id
-                                 and m["waste_type"] == "yellow")
-            if offers:
-                chosen = offers[0]
-                self.partner_id     = chosen["from"]
-                self.rendezvous_pos = chosen["pos"]
-                self._send({"type": "accept", "to": self.partner_id,
-                            "from": self.unique_id})
-
-        # ── 4. check for ACCEPT if *we* sent an offer ───────────────────
-        if self.offer_active and not self.waiting_partner:
-            acc = self._inbox(lambda m: m["type"] == "accept"
-                              and m["to"] == self.unique_id)
-            if acc:
-                self.partner_id      = acc[0]["from"]
-                self.waiting_partner = True  # freeze and wait
-
-        # ── 5. broadcast OFFER after picking first yellow ───────────────
-        if self.carrying == ["yellow"]:
-            if self.offer_active or self.partner_id:
-                self.locked_for_help = True
-            else:
-                visible = [w for w in self.model.unassigned_yellow_wastes
-                           if w in self.model.seen_wastes]
-                self.locked_for_help = not visible
-
-            if self.locked_for_help and not self.offer_active and not self.partner_id:
-                self.rendezvous_pos = self.pos
-                self._send({"type": "offer", "from": self.unique_id,
-                            "pos": self.rendezvous_pos, "waste_type": "yellow"})
-                self.offer_active = True
-                return  # stand still this tick
-
-        # ── 6. WAITING FOR PARTNER – stationary, watch for collision ────
-        if self.waiting_partner:
-            for a in self.model.grid.get_cell_list_contents(self.pos):
-                if getattr(a, "unique_id", None) == self.partner_id:
-                    self._send({"type": "transfer",
-                                "from": self.unique_id,
-                                "to": self.partner_id,
-                                "items": self.carrying.copy()})
-                    self.carrying.clear()
-                    self.waiting_partner = self.offer_active = False
-                    self.partner_id = self.rendezvous_pos = None
-            return  # stay put otherwise
-
-        # ── 7. SEEKER on its way to rendez‑vous ────────────────────────
-        if self.partner_id and self.rendezvous_pos and self.locked_for_help:
-            self.model.grid.move_agent(self, self.move_towards(self.rendezvous_pos))
+            self._reset_handshake()
             return
 
-        # ── 8. normal hunt / scout behaviour ───────────────────────────
-        self.assign_wastes()
+        # ── 4. accept incoming offer ─────────────────────────
+        if self.carrying == ["yellow"] and not self.offer_active and not self.partner_id:
+            offers = self._inbox(lambda m: m.get("type") == "offer"
+                                 and m.get("waste_type") == "yellow")
+            if offers:
+                o = offers[0]
+                self.partner_id = o["from"]
+                # reply with ACCEPT + our pos
+                self._send({
+                    "type": "accept",
+                    "from": self.unique_id,
+                    "to":   self.partner_id,
+                    "pos":  self.pos
+                })
+                # compute midpoint and lock
+                self._compute_midpoint(o["pos"])
+                self.offer_active = True
+                return
 
-        if self.carrying.count("yellow") < 2:
-            assigned = self.get_closest_assigned_waste("yellow")
-            if assigned:
-                tgt = assigned.pos
+        # ── 5. handle accept of my offer ─────────────────────
+        if self.offer_active and not self.partner_id:
+            acc = self._inbox(lambda m: m.get("type") == "accept"
+                              and m.get("to") == self.unique_id)
+            if acc:
+                a = acc[0]
+                self.partner_id = a["from"]
+                self._compute_midpoint(a["pos"])
+                return
+            # timeout unanswered offer → reset
+            self._reset_handshake()
+
+        # ── 6. broadcast offer if holding one yellow ─────────
+        if self.carrying == ["yellow"] and not self.offer_active and not self.partner_id:
+            # only if no other seen wastes to pick
+            visible = [w for w in self.model.unassigned_yellow_wastes
+                       if w in self.model.seen_wastes]
+            if not visible and len(self.assigned_wastes) == 0:
+                self.offer_active = True
+                self._send({
+                    "type":       "offer",
+                    "from":       self.unique_id,
+                    "waste_type": "yellow",
+                    "pos":        self.pos
+                })
+                return
+
+        # ── 7. move to rendezvous + transfer ───────────────────
+        if self.offer_active and self.partner_id and self.rendezvous_pos:
+            if self.pos != self.rendezvous_pos:
+                self.model.grid.move_agent(self, self.move_towards(self.rendezvous_pos))
+            else:
+                # transfer and clear
+                self._send({
+                    "type":  "transfer",
+                    "from":  self.unique_id,
+                    "to":    self.partner_id,
+                    "items": self.carrying.copy()
+                })
+                self.carrying.clear()
+                self._reset_handshake()
+            return
+
+        # ── 8. normal hunt / scout ───────────────────────────
+        self.assign_wastes()
+        n = self.carrying.count("yellow")
+        if n < 2:
+            tgt = self.get_closest_assigned_waste("yellow")
+            if tgt:
                 if self.heuristic == "astar":
-                    self.follow_path(self.astar_path(self.pos, tgt))
+                    self.follow_path(self.astar_path(self.pos, tgt.pos))
                 else:
-                    self.model.grid.move_agent(self, self.move_towards(tgt))
+                    self.model.grid.move_agent(self, self.move_towards(tgt.pos))
                 self.pick_up_if_present("yellow")
             else:
-                self._scout_step()
+                if n == 0:
+                    self._scout_step()
+        return
 
 class RedRobotAgent(BaseRobot):
     def allowed_zones(self):
