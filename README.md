@@ -6,7 +6,7 @@ Interactive and batch simulation of multi‑robot waste collection in three radi
 > - ✅ Local vision (no global map)
 > - 🧠 Smarter coordination through environmental messaging
 > - 📡 Communication system improvements
-> 🔗 Switch to branch: [`limited_perception`]((https://github.com/maxsuel-fa/self-organization-of-robots/tree/limited_perception))
+> 🔗 Switch to branch: [[`limited_perception`]((https://github.com/maxsuel-fa/self-organization-of-robots/tree/limited_perception))](https://github.com/maxsuel-fa/self-organization-of-robots/tree/limited_perception)
 
 ---
 ## Table of Contents
