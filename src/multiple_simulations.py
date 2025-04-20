@@ -10,7 +10,9 @@ import time
 from datetime import datetime
 from statistics import mean
 import concurrent.futures
+from itertools import product
 
+from tqdm import tqdm
 from model import RobotMission
 
 # --------------------------------------------------------------------- #
@@ -57,7 +59,7 @@ def run_batch(heuristic: str, robots: int, waste: int):
     step_runs, dist_runs, deli_runs = [], [], []
     wins = 0; gameovers = 0
 
-    for run_idx in range(NUM_RUNS):
+    for run_idx in tqdm(range(NUM_RUNS), desc=f"{heuristic} | R={robots} W={waste}", leave=False):
         model = RobotMission(
             width=30, height=30,
             num_green=robots, num_yellow=robots, num_red=robots,
@@ -102,7 +104,7 @@ def run_batch(heuristic: str, robots: int, waste: int):
             # treat timeouts and exceptions as gameover
             gameovers += 1
 
-    n = len(step_runs) or 1   # guard against division by zero
+    n = NUM_RUNS
     return (
         round(mean(step_runs), 2),
         round(mean(dist_runs), 2),
@@ -114,21 +116,21 @@ def run_batch(heuristic: str, robots: int, waste: int):
 # --------------------------------------------------------------------- #
 # Run the experiments and write CSV
 # --------------------------------------------------------------------- #
+combinations = list(product(HEURISTICS, ROBOT_SCENARIOS, WASTE_LEVELS))
+
 with open(CSV_PATH, "w", newline="") as fh:
     writer = csv.writer(fh)
     writer.writerow(CSV_HEADER)
 
-    for h in HEURISTICS:
-        for r in ROBOT_SCENARIOS:
-            for w in WASTE_LEVELS:
-                print(f"Running – heuristic={h}, robots={r}, waste={w}")
-                stats = run_batch(h, r, w)
+    for h, r, w in tqdm(combinations, desc="Simulating", total=len(combinations)):
+        print(f"Running – heuristic={h}, robots={r}, waste={w}")
+        stats = run_batch(h, r, w)
 
-                writer.writerow([
-                    h,
-                    r, r, r,             # num_green / yellow / red
-                    w, w, w,             # green / yellow / red waste
-                    *stats               # unpack the six computed values
-                ])
+        writer.writerow([
+            h,
+            r, r, r,             # num_green / yellow / red
+            w, w, w,             # green / yellow / red waste
+            *stats               # unpack the six computed values
+        ])
 
 print(f"✓ Finished. Results saved to {CSV_PATH}")

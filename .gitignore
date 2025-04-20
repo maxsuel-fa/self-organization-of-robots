@@ -169,3 +169,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+src/plot_1_winrate_vs_robots.png
+src/plot_2_distance_vs_robots.png
+src/plot_3_steps_vs_distance.png
+src/plot_4_barplot_winrate.png
+src/plot_5_heatmap_closest.png
+src/plot_5_heatmap_farthest.png
+src/plot_5_heatmap_min_total_distance.png
+src/batch_results/*
